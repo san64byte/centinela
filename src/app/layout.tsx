@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
   description: 'A secure place to store your sensitive data',
   icons: {
-    icon: '/favicon.svg',
+    icon: '/centinela.svg',
   },
 };
 
