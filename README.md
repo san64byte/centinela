@@ -184,46 +184,6 @@ model VaultItem {
 
 ---
 
-## 🔧 Contoh Implementasi Kunci (Ringkas)
-
-```ts
-// --- Register: cuma bikin vaultSalt ---
-const vaultSalt = crypto.randomUUID();
-// simpan vaultSalt ke User
-
-// --- Setup Master Password (step terpisah setelah register) ---
-async function setupMasterPassword(masterPassword: string, vaultSalt: string) {
-  const masterKey = await deriveKey(masterPassword, vaultSalt); // PBKDF2
-  const vaultKey = crypto.getRandomValues(new Uint8Array(32)); // kunci asli, random
-  const encryptedVaultKey = await wrapKey(vaultKey, masterKey); // AES-GCM
-  // simpan encryptedVaultKey ke User
-}
-
-// --- Unlock vault saat login ---
-async function unlockVault(masterPassword: string, vaultSalt: string, encryptedVaultKey: string) {
-  const masterKey = await deriveKey(masterPassword, vaultSalt);
-  const vaultKey = await unwrapKey(encryptedVaultKey, masterKey);
-  return vaultKey; // dipakai buat encrypt/decrypt VaultItem selama sesi berjalan
-}
-
-// --- Ganti Master Password ---
-async function changeMasterPassword(
-  oldPassword: string,
-  newPassword: string,
-  vaultSalt: string,
-  encryptedVaultKey: string,
-) {
-  const oldMasterKey = await deriveKey(oldPassword, vaultSalt);
-  const vaultKey = await unwrapKey(encryptedVaultKey, oldMasterKey);
-
-  const newMasterKey = await deriveKey(newPassword, vaultSalt); // vaultSalt tetap sama
-  const newEncryptedVaultKey = await wrapKey(vaultKey, newMasterKey);
-  // update encryptedVaultKey di database
-}
-```
-
----
-
 ## 🚀 Getting Started
 
 ```bash

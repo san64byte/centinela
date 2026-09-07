@@ -1,5 +1,5 @@
 import CenteredFormLayout from '@/components/wrapped-form';
-import SetupVaultForm from './setup-vault-form';
+import SetupVaultForm from '@/features/vault/components/setup-vault-form';
 import { getServerSession } from '@/lib/get-session';
 import { redirect } from 'next/navigation';
 import { Metadata } from 'next';

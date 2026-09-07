@@ -2,11 +2,11 @@
 
 import LoadingButton from '@/components/loading-button';
 import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field';
-import { useUsernameAvailability } from '@/hooks/use-username-availability';
+import { useUsernameAvailability } from '@/features/auth/hooks/use-username-availability';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
 import { cn, slugifyUsername } from '@/lib/utils';
-import { registerSchema } from '@/validation/auth-schema';
+import { registerSchema } from '@/features/auth/schemas/auth-schema';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';

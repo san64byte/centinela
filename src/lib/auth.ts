@@ -8,8 +8,6 @@ import { sendEmail } from './email';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { cookies } from 'next/headers';
 
-const pendingEmailChanges = new Map();
-
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: 'postgresql',
@@ -119,7 +117,23 @@ export const auth = betterAuth({
         const oldEmail = session?.user?.email;
 
         if (userId && oldEmail) {
-          pendingEmailChanges.set(userId, oldEmail);
+          try {
+            await prisma.verification.upsert({
+              where: { id: `email-change-old:${userId}` },
+              create: {
+                id: `email-change-old:${userId}`,
+                identifier: `email-change-old:${userId}`,
+                value: oldEmail,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Berlaku 24 jam
+              },
+              update: {
+                value: oldEmail,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+              },
+            });
+          } catch (err) {
+            console.error('Failed to save pending old email:', err);
+          }
         }
       }
     }),
@@ -139,11 +153,21 @@ export const auth = betterAuth({
       },
       update: {
         async after(user) {
-          const oldEmail = pendingEmailChanges.get(user.id);
-          if (oldEmail && oldEmail !== user.email) {
-            pendingEmailChanges.delete(user.id);
+          const record = await prisma.verification
+            .findUnique({
+              where: { id: `email-change-old:${user.id}` },
+            })
+            .catch(() => null);
 
-            // Notifikasi ke email lama — fire-and-forget, gak kritis
+          const oldEmail = record?.value;
+
+          if (oldEmail && oldEmail !== user.email) {
+            await prisma.verification
+              .delete({
+                where: { id: `email-change-old:${user.id}` },
+              })
+              .catch(() => null);
+
             sendEmail({
               to: oldEmail,
               subject: 'Your account email was changed',

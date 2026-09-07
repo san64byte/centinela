@@ -12,15 +12,17 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldGroup } from '@/components/ui/field';
 import LoadingButton from '@/components/loading-button';
-import { DecryptedVaultItem, VaultItemFormInput } from '@/types/vault-type';
-import { vaultItemFormSchema } from '@/validation/vault-schema';
+import { DecryptedVaultItem, VaultItemFormInput } from '../types/vault-type';
+import { vaultItemFormSchema } from '../schemas/vault-schema';
 import { useEffect } from 'react';
 import { useAppForm } from '@/lib/form';
 import { encryptData } from '@/lib/crypto/encryption';
-import { useVaultKey } from '@/hooks/use-vault-key';
-import { createEncryptedVaultItem, updateEncryptedVaultItem } from './action';
+import { useVaultKey } from '../hooks/use-vault-key';
+import { createEncryptedVaultItem, updateEncryptedVaultItem } from '../actions/vault.action';
 import isEqual from 'lodash.isequal';
 import { toast } from 'sonner';
+import { VaultItemType } from '@/lib/generated/prisma/enums';
+import { FileText, UserRound } from 'lucide-react';
 
 function defaultAccountValues(): VaultItemFormInput {
   return {
@@ -62,28 +64,35 @@ function toFormValues(item: DecryptedVaultItem): VaultItemFormInput {
   return { ...base, type: 'NOTE', data: { content: item.data.content } };
 }
 
-interface VaultFormProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  existingItem?: DecryptedVaultItem;
-  itemId?: string;
+function getInitialValues(
+  existingItem?: DecryptedVaultItem | null,
+  type: VaultItemType = 'ACCOUNT',
+): VaultItemFormInput {
+  if (existingItem) {
+    return toFormValues(existingItem);
+  }
+  return type === 'NOTE' ? defaultNoteValues() : defaultAccountValues();
 }
 
-export default function VaultForm({ open, onOpenChange, existingItem, itemId }: VaultFormProps) {
+interface VaultFormProps {
+  open: boolean;
+  type?: VaultItemType;
+  onOpenChange: (open: boolean) => void;
+  existingItem?: DecryptedVaultItem | null;
+}
+
+export default function VaultForm({
+  open,
+  type = 'ACCOUNT',
+  onOpenChange,
+  existingItem,
+}: VaultFormProps) {
   const { vaultKey } = useVaultKey();
 
-  const isEditMode = existingItem != undefined && itemId !== undefined;
-
-  function switchItemType(
-    newType: VaultItemFormInput['type'],
-    current: VaultItemFormInput,
-  ): VaultItemFormInput {
-    const base = newType === 'ACCOUNT' ? defaultAccountValues() : defaultNoteValues();
-    return { ...base, title: current.title, url: current.url, pinned: current.pinned };
-  }
+  const isEditMode = Boolean(existingItem);
 
   const form = useAppForm({
-    defaultValues: existingItem ? toFormValues(existingItem) : defaultAccountValues(),
+    defaultValues: getInitialValues(existingItem, type),
     validators: {
       onChange: vaultItemFormSchema,
       onSubmit: vaultItemFormSchema,
@@ -91,7 +100,7 @@ export default function VaultForm({ open, onOpenChange, existingItem, itemId }: 
     onSubmit: async ({ value }) => {
       const parsed = vaultItemFormSchema.parse(value);
 
-      if (isEditMode) {
+      if (isEditMode && existingItem) {
         const originalValues = vaultItemFormSchema.parse(toFormValues(existingItem));
         if (isEqual(parsed, originalValues)) {
           toast('No changes to save');
@@ -105,19 +114,20 @@ export default function VaultForm({ open, onOpenChange, existingItem, itemId }: 
         const { ciphertext, iv } = await encryptData(data, vaultKey!);
 
         const payload = { ...others, ciphertext, iv };
-        const { error } = isEditMode
-          ? await updateEncryptedVaultItem(itemId, payload)
-          : await createEncryptedVaultItem(payload);
+        const res =
+          isEditMode && existingItem
+            ? await updateEncryptedVaultItem(existingItem.id, payload)
+            : await createEncryptedVaultItem(payload);
 
-        if (error) {
-          toast('Failed to save vault');
+        if (!res.success) {
+          toast.error(res.error || 'Something went wrong');
           return;
         }
 
-        toast('Vault saved successfully');
+        toast.success(isEditMode ? 'Vault updated successfully' : 'Vault created successfully');
         onOpenChange(false);
       } catch {
-        toast('Something went wrong');
+        toast.error('Something went wrong');
       }
     },
   });
@@ -125,23 +135,28 @@ export default function VaultForm({ open, onOpenChange, existingItem, itemId }: 
   useEffect(() => {
     if (!open) return;
 
-    if (existingItem) {
-      form.reset(toFormValues(existingItem));
-    } else {
-      form.reset(defaultAccountValues());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, itemId]);
+    form.reset(getInitialValues(existingItem, type));
+  }, [open, type, existingItem]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Vault' : 'Add New Vault'}</DialogTitle>
-          <DialogDescription>
+          <div className="mx-auto flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            {type === 'ACCOUNT' ? (
+              <UserRound className="size-5" />
+            ) : (
+              <FileText className="size-5" />
+            )}
+          </div>
+          <DialogTitle className="text-center text-xl">
             {isEditMode
-              ? 'Update the details for this vault item.'
-              : 'Enter the details for the new vault item.'}
+              ? `Edit ${existingItem?.type === 'NOTE' ? 'Note' : 'Account'}`
+              : `Add New ${type === 'NOTE' ? 'Note' : 'Account'}`}
+          </DialogTitle>
+          <DialogDescription className="text-center">
+            All sensitive fields will be automatically encrypted using AES-GCM in the browser before
+            being saved.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -154,25 +169,6 @@ export default function VaultForm({ open, onOpenChange, existingItem, itemId }: 
           <div className="-mx-4 no-scrollbar max-h-[50vh] overflow-y-auto px-4 pb-4">
             <FieldGroup>
               <div className="flex flex-col gap-3">
-                <form.AppField name="type">
-                  {(field) => (
-                    <field.SelectField
-                      label="Type"
-                      disabled={isEditMode}
-                      placeholder="-- Select a type --"
-                      groupLabel="Vault Item Type"
-                      options={[
-                        { value: 'ACCOUNT', label: 'Account' },
-                        { value: 'NOTE', label: 'Note' },
-                      ]}
-                      onValueChange={(value) => {
-                        const newType = value as VaultItemFormInput['type'];
-                        form.reset(switchItemType(newType, form.state.values));
-                      }}
-                    />
-                  )}
-                </form.AppField>
-
                 <form.AppField name="title">
                   {(field) => <field.TextField label="Title" placeholder="e.g. Account Gmail" />}
                 </form.AppField>
@@ -304,7 +300,9 @@ export default function VaultForm({ open, onOpenChange, existingItem, itemId }: 
               selector={(state) => [state.isSubmitting, state.canSubmit, state.values] as const}
             >
               {([isSubmitting, canSubmit, values]) => {
-                const noChange = isEditMode && isEqual(values, toFormValues(existingItem));
+                const noChange = Boolean(
+                  existingItem && isEqual(values, toFormValues(existingItem)),
+                );
                 return (
                   <Field className="sm:w-fit">
                     <LoadingButton

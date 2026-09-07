@@ -1,13 +1,12 @@
-import { UserRoundCog } from 'lucide-react';
+import { ShieldCheck, UserRound, UserRoundCog } from 'lucide-react';
 import { getServerSession } from '@/lib/get-session';
 import { redirect } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import BasicInformationForm from './basic-information';
-import EmailForm from './email-form';
-import PasswordForm from './password-form';
-import MasterPasswordForm from './master-password-form';
-import ResetMasterPassword from './reset-master-password';
-import DeleteAccount from './delete-account';
+import BasicInformationForm from '@/features/settings/components/basic-information';
+import EmailForm from '@/features/settings/components/email-form';
+import PasswordForm from '@/features/settings/components/password-form';
+import MasterPasswordForm from '@/features/settings/components/master-password-form';
+import DeleteAccount from '@/features/settings/components/delete-account';
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -35,9 +34,13 @@ export default async function AccountPage() {
       </div>
 
       <Tabs defaultValue="general">
-        <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
+        <TabsList className="w-full">
+          <TabsTrigger value="general">
+            <UserRound className="size-4" /> General
+          </TabsTrigger>
+          <TabsTrigger value="security">
+            <ShieldCheck className="size-4" /> Security
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="general">
           <div className="mt-4 space-y-4">
@@ -48,12 +51,7 @@ export default async function AccountPage() {
         <TabsContent value="security">
           <div className="mt-4 space-y-4">
             <PasswordForm />
-            {isHaveMasterPassword && (
-              <>
-                <MasterPasswordForm user={user} />
-                <ResetMasterPassword />
-              </>
-            )}
+            {isHaveMasterPassword && <MasterPasswordForm user={user} />}
             <DeleteAccount />
           </div>
         </TabsContent>

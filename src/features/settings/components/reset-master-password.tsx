@@ -1,7 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -13,7 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, TriangleAlert } from 'lucide-react';
 import {
   Field,
   FieldContent,
@@ -24,10 +23,10 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useState, useTransition } from 'react';
 import LoadingButton from '@/components/loading-button';
-import { resetMasterPassword } from './action';
+import { resetMasterPassword } from '../actions/settings.action';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { useVaultKey } from '@/hooks/use-vault-key';
+import { useVaultKey } from '@/features/vault/hooks/use-vault-key';
 
 export default function ResetMasterPassword() {
   const [checked, setChecked] = useState(false);
@@ -37,45 +36,60 @@ export default function ResetMasterPassword() {
 
   function handleResetMasterPassword() {
     startTransition(async () => {
-      const { error, success } = await resetMasterPassword();
+      const res = await resetMasterPassword();
 
-      if (!success) {
-        toast(error ?? 'Something went wrong.');
+      if (!res.success) {
+        toast.error(res.error || 'Something went wrong.');
         return;
       }
 
       lock();
-      toast('Master password deleted successfully.');
+      toast.success('Master password reset successfully.');
       router.push('/setup-vault');
     });
   }
 
   return (
-    <Card className="ring-destructive/50">
-      <CardHeader>
-        <CardTitle className="font-semibold text-destructive">Reset Master Password</CardTitle>
-        <CardDescription>
-          Forgot your master password? Since we never store it, there&apos;s no way to recover your
-          vault key. Resetting will permanently delete all items in your vault.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div className="border-t pt-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-0.5">
+          <span className="text-sm font-semibold text-destructive">Reset Master Password</span>
+          <p className="text-xs text-muted-foreground">
+            Forgot your master password? Resetting will generate a new vault key and permanently
+            delete all items in your vault.
+          </p>
+        </div>
+
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive" type="submit" className="max-w-fit border-destructive">
+            <Button
+              variant="destructive"
+              type="button"
+              className="shrink-0 gap-2 border-destructive"
+            >
+              <RotateCcw className="size-4" />
               Reset master password
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent size="sm">
+          <AlertDialogContent size="sm" className="sm:min-w-md">
             <AlertDialogHeader>
               <AlertDialogMedia className="bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-destructive">
                 <RotateCcw />
               </AlertDialogMedia>
-              <AlertDialogTitle>Reset master passowrd?</AlertDialogTitle>
+              <AlertDialogTitle>Reset master password?</AlertDialogTitle>
               <AlertDialogDescription>
-                Since we never store it, there&apos;s no way to recover your vault key. Resetting
-                will permanently delete all items in your vault.
+                Are you sure you want to reset your master password?
               </AlertDialogDescription>
+              <div className="mt-2 flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-start text-xs text-destructive">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                <div className="space-y-0.5">
+                  <span className="block font-semibold">Irreversible Action</span>
+                  <span className="text-muted-foreground">
+                    Since we never store your master password, resetting it will immediately and
+                    permanently delete all items in your vault.
+                  </span>
+                </div>
+              </div>
               <FieldGroup className="mt-2">
                 <Field orientation="horizontal">
                   <Checkbox
@@ -88,7 +102,7 @@ export default function ResetMasterPassword() {
                     <FieldLabel htmlFor="terms-checkbox-desc">
                       Accept terms and conditions
                     </FieldLabel>
-                    <FieldDescription>
+                    <FieldDescription className="text-xs">
                       By clicking this checkbox, you agree to the terms and conditions.
                     </FieldDescription>
                   </FieldContent>
@@ -108,7 +122,7 @@ export default function ResetMasterPassword() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { VaultItemFormInput } from '@/types/vault-type';
+import { VaultItemFormInput } from '../types/vault-type';
 import * as z from 'zod';
 
 const phonePattern = /^[0-9+()\- ]+$/;
@@ -6,8 +6,7 @@ const pinPattern = /^\d{4,12}$/;
 
 export const masterPasswordSchema = z
   .string()
-  .min(8, 'Master password must be at least 8 characters')
-  .regex(/^[^-]*$/, 'Master password cannot contain -');
+  .min(8, 'Master password must be at least 8 characters');
 
 export const accountDataSchema = z
   .object({

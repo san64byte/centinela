@@ -1,5 +1,5 @@
 import { authClient } from '@/lib/auth-client';
-import { usernameSchema } from '@/validation/auth-schema';
+import { usernameSchema } from '@/features/auth/schemas/auth-schema';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface UseUsernameAvailabilityOptions {

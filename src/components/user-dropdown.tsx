@@ -10,13 +10,13 @@ import {
 } from './ui/dropdown-menu';
 import { Button } from './ui/button';
 import Link from 'next/link';
-import { Loader2, LogOutIcon, Settings, User2, Vault } from 'lucide-react';
+import { Loader2, LogOut, Settings, UserRound, Vault } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { User } from '@/lib/auth';
-import { useVaultKey } from '@/hooks/use-vault-key';
-import { useSignOutState } from '@/hooks/use-signout';
+import { useVaultKey } from '@/features/vault/hooks/use-vault-key';
+import { useSignOutState } from '@/features/auth/hooks/use-signout';
 
 export default function UserDropdown({ user }: { user: User }) {
   const { lock } = useVaultKey();
@@ -47,12 +47,19 @@ export default function UserDropdown({ user }: { user: User }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" className="rounded-full" disabled={isSignOut}>
-          <User2 />
+          <UserRound className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>@{user.username}</DropdownMenuLabel>
+          <DropdownMenuLabel className="mb-1.5">
+            <div className="flex flex-col gap-1">
+              <span className="truncate text-xs leading-none font-semibold">{user.name}</span>
+              <span className="truncate text-[11px] leading-none text-muted-foreground">
+                {user.email}
+              </span>
+            </div>
+          </DropdownMenuLabel>
           <DropdownMenuItem asChild>
             <Link href="/settings">
               <Settings />
@@ -66,7 +73,7 @@ export default function UserDropdown({ user }: { user: User }) {
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-            {isSignOut ? <Loader2 className="animate-spin" /> : <LogOutIcon />}
+            {isSignOut ? <Loader2 className="animate-spin" /> : <LogOut />}
             Sign Out
           </DropdownMenuItem>
         </DropdownMenuGroup>

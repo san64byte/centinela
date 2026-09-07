@@ -12,29 +12,38 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { deleteVaultItem } from './action';
+import { deleteVaultItem } from '../actions/vault.action';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import LoadingButton from '@/components/loading-button';
+import { useRouter } from 'next/navigation';
 
-export default function DeleteVault({ id }: { id: string }) {
+interface DeleteVaultProps {
+  id: string;
+  onSuccess?: () => void;
+}
+
+export default function DeleteVault({ id, onSuccess }: DeleteVaultProps) {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const router = useRouter();
 
   if (!id) return null;
 
   async function deleteVault() {
     setLoading(true);
     try {
-      const { error } = await deleteVaultItem(id);
-      if (error) {
-        toast('Failed to delete vault');
+      const res = await deleteVaultItem(id);
+      if (!res.success) {
+        toast.error(res.error || 'Failed to delete vault');
         return;
       }
-      toast('Vault deleted successfully');
+      toast.success('Vault deleted successfully');
       setOpen(false);
+      onSuccess?.();
+      router.refresh();
     } catch {
-      toast('Failed to delete vault');
+      toast.error('Failed to delete vault');
     } finally {
       setLoading(false);
     }
@@ -43,8 +52,9 @@ export default function DeleteVault({ id }: { id: string }) {
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button variant="destructive" size="icon">
+        <Button variant="destructive">
           <Trash2 />
+          Delete
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent size="sm">

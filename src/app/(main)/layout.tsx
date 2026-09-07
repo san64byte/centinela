@@ -1,6 +1,6 @@
 import Navbar from '@/components/navbar';
 import WrapperContent from '@/components/wrapper-content';
-import { VaultKeyProvider } from '@/hooks/use-vault-key';
+import { VaultKeyProvider } from '@/features/vault/hooks/use-vault-key';
 import React from 'react';
 
 export default async function layout({

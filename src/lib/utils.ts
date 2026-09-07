@@ -1,6 +1,5 @@
 import { clsx, type ClassValue } from 'clsx';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
-import { id } from 'date-fns/locale';
 import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
@@ -14,9 +13,7 @@ export function formatDate(date: string | Date | number) {
     return '-';
   }
 
-  const formatted = format(parseDate, "d MMMM yyyy 'pukul' HH:mm", {
-    locale: id,
-  });
+  const formatted = format(parseDate, "d MMMM yyyy 'at' HH:mm");
 
   // return format dari 08:30 -> 08.30
   return formatted.replace(/(\d{2}):(\d{2})$/, '$1.$2');
@@ -41,7 +38,7 @@ export function formatRelativeDate(
     return formatDate(parsedDate);
   }
 
-  return formatDistanceToNow(parsedDate, { addSuffix: true, locale: id });
+  return formatDistanceToNow(parsedDate, { addSuffix: true });
 }
 
 export function slugifyUsername(name: string, maxLength = 12) {

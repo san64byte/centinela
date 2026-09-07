@@ -2,11 +2,11 @@
 
 import LoadingButton from '@/components/loading-button';
 import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field';
-import { useSignOutState } from '@/hooks/use-signout';
+import { useSignOutState } from '@/features/auth/hooks/use-signout';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
 import { cn } from '@/lib/utils';
-import { loginSchema } from '@/validation/auth-schema';
+import { loginSchema } from '@/features/auth/schemas/auth-schema';
 import { ErrorContext } from 'better-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';

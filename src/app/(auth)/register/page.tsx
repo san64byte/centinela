@@ -1,4 +1,4 @@
-import RegisterForm from './register-form';
+import RegisterForm from '@/features/auth/components/register-form';
 import { Metadata } from 'next';
 import CenteredFormLayout from '@/components/wrapped-form';
 

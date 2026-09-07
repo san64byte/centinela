@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
-import { updatePasswordSchema } from '@/validation/auth-schema';
+import { updatePasswordSchema } from '@/features/auth/schemas/auth-schema';
+import { ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -49,7 +50,18 @@ export default function PasswordForm() {
         <CardTitle className="font-semibold">Password</CardTitle>
         <CardDescription>Change the password you use to sign in to your account.</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3 text-xs">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="space-y-0.5">
+            <span className="block text-muted-foreground">Security Notice</span>
+            <span className="font-medium text-foreground">
+              Changing your password will automatically sign out all other active sessions across
+              your devices.
+            </span>
+          </div>
+        </div>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -57,17 +69,22 @@ export default function PasswordForm() {
             form.handleSubmit();
           }}
         >
-          <FieldGroup>
+          <FieldGroup className="gap-2">
             {error && <FieldError>{error}</FieldError>}
 
             <form.AppField name="currentPassword">
               {(field) => (
-                <field.PasswordField label="Current" placeholder="Enter current password" />
+                <field.PasswordField
+                  label="Current Password"
+                  placeholder="Enter current password"
+                />
               )}
             </form.AppField>
 
             <form.AppField name="newPassword">
-              {(field) => <field.PasswordField label="New" placeholder="Enter new password" />}
+              {(field) => (
+                <field.PasswordField label="New Password" placeholder="Enter new password" />
+              )}
             </form.AppField>
 
             <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>

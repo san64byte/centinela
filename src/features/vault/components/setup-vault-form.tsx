@@ -7,11 +7,11 @@ import { User } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useForm } from '@tanstack/react-form';
 import React, { useState } from 'react';
-import { saveEncryptedVaultKey } from './action';
-import { useVaultKey } from '@/hooks/use-vault-key';
+import { saveEncryptedVaultKey } from '../actions/setup-vault.action';
+import { useVaultKey } from '../hooks/use-vault-key';
 import { useRouter } from 'next/navigation';
 import { setupMasterPassword } from '@/lib/crypto/setup';
-import { setupMasterPasswordSchema } from '@/validation/vault-schema';
+import { setupMasterPasswordSchema } from '../schemas/vault-schema';
 
 interface SetupVaultFormProps extends React.ComponentProps<'form'> {
   user: User;
@@ -29,7 +29,7 @@ export default function SetupVaultForm({ user, className, ...props }: SetupVault
     if (pwd.length >= 12) strength++;
     if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) strength++;
     if (/\d/.test(pwd)) strength++;
-    if (/[^a-zA-Z\d-]/.test(pwd)) strength++;
+    if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
     return strength;
   };
 
@@ -50,18 +50,14 @@ export default function SetupVaultForm({ user, className, ...props }: SetupVault
           user.vaultSalt!,
         );
 
-        const { error } = await saveEncryptedVaultKey(
-          user.id,
-          encryptedVaultKey,
-          encryptedVaultKeyIv,
-        );
+        const res = await saveEncryptedVaultKey(encryptedVaultKey, encryptedVaultKeyIv);
 
-        if (!error) {
+        if (res.success) {
           setUnlockedKey(vaultKey!);
           setError(null);
           router.push('/vault');
         } else {
-          setError('Failed to set up the master password.');
+          setError(res.error || 'Failed to set up the master password.');
         }
       } catch {
         setError('Failed to set up the master password.');

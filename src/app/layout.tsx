@@ -22,14 +22,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={cn('antialiased', fontSans.variable)}>
+      <body className={cn('antialiased', fontSans.variable)} suppressHydrationWarning>
         {children}
         <Toaster
           toastOptions={{

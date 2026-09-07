@@ -4,6 +4,8 @@ import { getServerSession } from '@/lib/get-session';
 import UserDropdown from './user-dropdown';
 import Image from 'next/image';
 
+import Link from 'next/link';
+
 export default async function Navbar() {
   const session = await getServerSession();
   const user = session?.user;
@@ -17,7 +19,10 @@ export default async function Navbar() {
       )}
     >
       <WrapperContent className="flex justify-between gap-6 py-3">
-        <div className="flex items-center gap-1">
+        <Link
+          href="/vault"
+          className="flex items-center gap-1.5 transition-opacity hover:opacity-85"
+        >
           <Image
             className="h-5 w-5 shrink-0"
             src="/centinela.svg"
@@ -26,7 +31,7 @@ export default async function Navbar() {
             alt="Logo centinela"
           />
           <span className="text-lg font-light text-foreground">Centinela</span>
-        </div>
+        </Link>
 
         <UserDropdown user={user} />
       </WrapperContent>

@@ -2,11 +2,11 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
-import { updateProfileDetailSchema } from '@/validation/auth-schema';
+import { updateProfileDetailSchema } from '@/features/auth/schemas/auth-schema';
 import LoadingButton from '@/components/loading-button';
 import { User } from '@/lib/auth';
 import { useAppForm } from '@/lib/form';
-import { useUsernameAvailability } from '@/hooks/use-username-availability';
+import { useUsernameAvailability } from '@/features/auth/hooks/use-username-availability';
 import { useState } from 'react';
 import isEqual from 'lodash.isequal';
 import { toast } from 'sonner';
@@ -80,20 +80,11 @@ export default function BasicInformationForm({ user }: { user: User }) {
             form.handleSubmit();
           }}
         >
-          <FieldGroup>
+          <FieldGroup className="gap-2">
             {error && <FieldError>{error}</FieldError>}
 
             <form.AppField name="name">
-              {(field) => (
-                <field.TextField
-                  label="Full Name"
-                  placeholder="Bahlil Ganteng"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    field.handleChange(value);
-                  }}
-                />
-              )}
+              {(field) => <field.TextField label="Full Name" placeholder="e.g. John Doe" />}
             </form.AppField>
 
             <form.AppField name="username">
@@ -108,7 +99,7 @@ export default function BasicInformationForm({ user }: { user: User }) {
                     checkUsername,
                     setUsernameTouched,
                   }}
-                  placeholder="e.g. bahlil_ganteng"
+                  placeholder="e.g. johndoe"
                 />
               )}
             </form.AppField>

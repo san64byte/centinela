@@ -4,7 +4,7 @@ import LoadingButton from '@/components/loading-button';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
-import { withEmailSchema } from '@/validation/auth-schema';
+import { withEmailSchema } from '@/features/auth/schemas/auth-schema';
 import { useState } from 'react';
 
 export default function ForgotPasswordForm() {

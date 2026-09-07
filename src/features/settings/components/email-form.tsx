@@ -3,8 +3,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import LoadingButton from '@/components/loading-button';
-import { withEmailSchema } from '@/validation/auth-schema';
+import { withEmailSchema } from '@/features/auth/schemas/auth-schema';
 import { useAppForm } from '@/lib/form';
+import { Mail } from 'lucide-react';
 import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 
@@ -14,7 +15,7 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
 
   const form = useAppForm({
     defaultValues: {
-      email: currentEmail,
+      email: '',
     },
     validators: {
       onChange: withEmailSchema,
@@ -49,7 +50,15 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
           verification.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3 text-xs">
+          <Mail className="size-4 shrink-0 text-muted-foreground" />
+          <div>
+            <span className="mb-0.5 block text-muted-foreground">Current Email</span>
+            <span className="font-semibold text-foreground">{currentEmail}</span>
+          </div>
+        </div>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -62,7 +71,12 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
 
             <form.AppField name="email">
               {(field) => (
-                <field.TextField label="Email" type="email" placeholder="your@gmail.com" />
+                <field.TextField
+                  label="New Email"
+                  type="email"
+                  description=" *Changing your email will automatically revoke all other login sessions on different devices for security reasons."
+                  placeholder="new-email@gmail.com"
+                />
               )}
             </form.AppField>
 
