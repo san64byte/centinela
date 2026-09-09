@@ -8,13 +8,16 @@
 
 ## ✨ Fitur Utama
 
-- 🔑 **End-to-end encryption** — data dienkripsi/didekripsi sepenuhnya di client (browser), menggunakan **AES-256-GCM**
-- 🧂 **Key derivation aman** — Master Password diubah jadi kunci lewat **PBKDF2-SHA256** (600.000 iterasi, sesuai rekomendasi OWASP 2024+)
-- 🗝️ **Dua lapis kunci (envelope encryption)** — `vaultKey` (kunci asli yang mengenkripsi vault item) dipisah dari `masterKey` (kunci turunan Master Password yang cuma membungkus `vaultKey`). Ganti Master Password tidak perlu membongkar ulang seluruh vault
-- 🚫 **Master Password tidak pernah dikirim ke server** — hanya digunakan untuk derive key di browser
-- 🧠 **Kunci hanya hidup di memory** — `masterKey` dan `vaultKey` otomatis hilang saat refresh halaman, memaksa re-derive dari Master Password
-- 🔒 **Autentikasi terpisah** — login/register dikelola oleh [Better Auth](https://www.better-auth.com/), independen dari sistem enkripsi vault
-- ✅ **Integritas data terjamin** — AES-GCM punya _authentication tag_ built-in, otomatis mendeteksi password salah atau data yang di-tamper
+- 🔑 **End-to-end encryption** — data dienkripsi/didekripsi sepenuhnya di client (browser), menggunakan **AES-256-GCM**.
+- 🧂 **Key derivation aman** — Master Password diubah jadi kunci lewat **PBKDF2-SHA256** (600.000 iterasi, sesuai rekomendasi OWASP).
+- 🗝️ **Dua lapis kunci (envelope encryption)** — `vaultKey` (kunci asli yang mengenkripsi vault item) dipisah dari `masterKey` (kunci turunan Master Password yang cuma membungkus `vaultKey`). Ganti Master Password tidak perlu membongkar ulang seluruh vault.
+- 🎲 **Built-in Password Generator** — alat pembuat kata sandi acak ber-entropi tinggi (`crypto.getRandomValues`) dengan pengaturan panjang karakter, variasi simbol/angka, opsi menghindari karakter ambigu, dan indikator kekuatan (_strength meter_).
+- ⚡ **Supabase Keep-Alive Automation** — alur kerja GitHub Actions otomatis yang melakukan _ping_ query ke database Supabase setiap 3 hari sekali agar database gratis tidak di-pause.
+- 🚫 **Master Password tidak pernah dikirim ke server** — hanya digunakan untuk derive key di browser.
+- 🧠 **Kunci hanya hidup di memory** — `masterKey` dan `vaultKey` otomatis hilang saat refresh halaman, memaksa re-derive dari Master Password.
+- 🔒 **Autentikasi terpisah** — login/register dikelola oleh [Better Auth](https://www.better-auth.com/), independen dari sistem enkripsi vault.
+- ✉️ **Verifikasi Email** — konfirmasi akun aman via email menggunakan [Resend](https://resend.com/).
+- ✅ **Integritas data terjamin** — AES-GCM punya _authentication tag_ built-in, otomatis mendeteksi password salah atau data yang di-tamper.
 
 ---
 
@@ -34,7 +37,7 @@ graph TD
         Encrypt_Proc["Encryption Process - AES-GCM"]
         Decrypt_Proc["Decryption Process - AES-GCM"]
     end
-    subgraph Server["SERVER and DATABASE - Prisma"]
+    subgraph Server["SERVER and DATABASE - Prisma & Supabase"]
         UserTable["User Table: id, email, password hash, vaultSalt, encryptedVaultKey"]
         VaultTable["VaultItem Table: title, category, url plain - ciphertext, iv encrypted"]
     end
@@ -70,31 +73,67 @@ graph TD
     style Server fill:#e1f5fe,stroke:#01579b
 ```
 
-### Alur singkat
+### Alur Singkat Kriptografi
 
 1. **Register** — User register lewat Better Auth → `vaultSalt` random di-generate sekali → disimpan di `User` table. Vault belum siap dipakai di titik ini.
-2. **Setup Master Password** (step terpisah, setelah register) — User membuat Master Password → Master Password + `vaultSalt` di-derive lewat PBKDF2 jadi **`masterKey`** → `vaultKey` (kunci asli, random) di-generate sekali → `vaultKey` dienkripsi pakai `masterKey` → hasilnya (`encryptedVaultKey`) disimpan di `User` table.
-3. **Unlock vault** — Setiap kali buka app / refresh, user input Master Password lagi → `vaultSalt` + `encryptedVaultKey` diambil dari server → `masterKey` di-derive ulang → dipakai untuk membuka `encryptedVaultKey` → didapat `vaultKey` yang sama seperti sebelumnya (server tidak pernah menyimpan `vaultKey` maupun `masterKey` dalam bentuk plain)
-4. **Simpan item** — Data sensitif (username, password, notes) digabung jadi JSON → dienkripsi pakai `vaultKey` + AES-GCM → hanya `ciphertext` + `iv` yang dikirim & disimpan di server
-5. **Buka item** — `ciphertext` + `iv` diambil dari server → didekripsi di client pakai `vaultKey` → jika Master Password salah, `masterKey` yang di-derive juga salah, `encryptedVaultKey` gagal dibuka, dan dekripsi vault item otomatis gagal (authentication tag mismatch)
-6. **Ganti Master Password** — `masterKey` lama buka `encryptedVaultKey` → dapat `vaultKey` asli → `masterKey` baru (dari Master Password baru + `vaultSalt` yang sama) membungkus ulang `vaultKey` yang sama → `encryptedVaultKey` baru disimpan. **`vaultKey` tidak pernah berubah**, jadi seluruh `VaultItem` tidak perlu di-decrypt-encrypt ulang.
+2. **Setup Master Password** — User membuat Master Password → Master Password + `vaultSalt` di-derive lewat PBKDF2 jadi **`masterKey`** → `vaultKey` (kunci acak 256-bit) di-generate → `vaultKey` dienkripsi pakai `masterKey` → hasilnya (`encryptedVaultKey`) disimpan di `User` table.
+3. **Unlock Vault** — Setiap kali buka app / refresh, user input Master Password → `vaultSalt` + `encryptedVaultKey` diambil dari server → `masterKey` di-derive ulang → dipakai untuk membuka `encryptedVaultKey` → didapat `vaultKey` asli di memori browser.
+4. **Simpan Item** — Kredensial akun digabung jadi JSON → dienkripsi pakai `vaultKey` + AES-GCM → hanya `ciphertext` + `iv` yang dikirim & disimpan di server.
+5. **Buka Item** — `ciphertext` + `iv` diambil dari server → didekripsi di client pakai `vaultKey` → jika Master Password salah, `masterKey` salah, dan dekripsi gagal otomatis (_authentication tag mismatch_).
+6. **Ganti Master Password** — `masterKey` lama membuka `encryptedVaultKey` → `masterKey` baru membungkus ulang `vaultKey` yang sama → **`vaultKey` tidak berubah**, sehingga seluruh data vault tidak perlu dienkripsi ulang.
 
 ---
 
 ## 🧰 Tech Stack
 
-| Layer                | Teknologi                                             |
-| -------------------- | ----------------------------------------------------- |
-| Framework            | [Next.js](https://nextjs.org/) (App Router)           |
-| Bahasa               | TypeScript                                            |
-| Autentikasi          | [Better Auth](https://www.better-auth.com/)           |
-| ORM / Database       | [Prisma](https://www.prisma.io/) + PostgreSQL         |
-| Enkripsi             | Web Crypto API (`PBKDF2`, `AES-GCM`)                  |
-| Form                 | [TanStack Form](https://tanstack.com/form)            |
-| Validasi             | [Zod](https://zod.dev/)                               |
-| UI Components        | [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4 |
-| Email                | Resend                                                |
-| Linting / Formatting | ESLint, Prettier, Husky (pre-commit/pre-push hooks)   |
+| Layer               | Teknologi                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| **Framework**       | [Next.js](https://nextjs.org/) 16 (App Router, Server Actions)                               |
+| **Bahasa**          | TypeScript                                                                                   |
+| **Autentikasi**     | [Better Auth](https://www.better-auth.com/)                                                  |
+| **Database & ORM**  | [Prisma](https://www.prisma.io/) + [Supabase](https://supabase.com/) (PostgreSQL)            |
+| **Enkripsi Client** | Web Crypto API (`PBKDF2-SHA256`, `AES-256-GCM`, `getRandomValues`)                           |
+| **Form & Validasi** | [TanStack Form](https://tanstack.com/form) + [Zod](https://zod.dev/)                         |
+| **UI Components**   | [shadcn/ui](https://ui.shadcn.com/) + [Tailwind CSS v4](https://tailwindcss.com/) + Radix UI |
+| **Email Service**   | [Resend](https://resend.com/)                                                                |
+| **Automasi / Cron** | GitHub Actions (Scheduled Supabase Keep-Alive)                                               |
+| **Testing**         | [Vitest](https://vitest.dev/)                                                                |
+
+---
+
+## 📁 Struktur Direktori
+
+```text
+centinela/
+├── .github/
+│   └── workflows/
+│       └── keep-alive.yml      # Workflow otomatisasi anti-pause Supabase
+├── prisma/
+│   └── schema.prisma           # Skema database Prisma (User, VaultItem, Session)
+├── scripts/
+│   └── keep-alive.mjs          # Script Node.js mandiri ping PostgreSQL Supabase
+├── src/
+│   ├── actions/                # Server Actions (settings, setup-vault, vault)
+│   ├── app/                    # Next.js App Router (pages & API routes)
+│   │   └── api/
+│   │       ├── auth/           # Better Auth handler
+│   │       └── cron/keep-alive # Endpoint alternatif cron ping database
+│   ├── components/
+│   │   ├── auth/               # Form login, register, reset password
+│   │   ├── settings/           # Form profil, email, master password
+│   │   ├── ui/                 # Komponen dasar shadcn/ui
+│   │   ├── vault/              # Dashboard vault, form modal, card, detail
+│   │   └── password-generator.tsx # Komponen dialog password generator
+│   ├── hooks/                  # Custom React hooks (useVaultKey, useSignout, dll)
+│   ├── lib/
+│   │   ├── crypto/             # Modul Web Crypto (keys, encryption, setup, generator)
+│   │   ├── auth.ts             # Konfigurasi Better Auth
+│   │   └── prisma.ts           # Inisialisasi Prisma Client & adapter-pg
+│   ├── schemas/                # Skema validasi Zod
+│   ├── test/                   # Unit test Vitest (crypto, schema, actions)
+│   └── types/                  # Definisi tipe TypeScript
+└── vercel.json                 # Konfigurasi deployment & Vercel Cron
+```
 
 ---
 
@@ -102,118 +141,134 @@ graph TD
 
 ### 1. Key Derivation — PBKDF2-SHA256 (menghasilkan `masterKey`)
 
-```
+```text
 Master Password + vaultSalt
         ↓  (600.000 iterasi HMAC-SHA256)
        masterKey (256-bit, non-extractable)
 ```
 
-| Parameter           | Nilai             | Alasan                                                                                          |
-| ------------------- | ----------------- | ----------------------------------------------------------------------------------------------- |
-| Iterasi             | 600.000           | Rekomendasi minimum OWASP untuk PBKDF2-SHA256 (2024+)                                           |
-| Hash function       | SHA-256           | Aman, native di Web Crypto API                                                                  |
-| Panjang `masterKey` | 256-bit           | Dipakai sebagai wrapping key untuk `vaultKey`, bukan untuk enkripsi vault item langsung         |
-| Panjang `vaultSalt` | 16 byte (128-bit) | Dibuat sekali saat register; mencegah dua Master Password identik menghasilkan `masterKey` sama |
-| `extractable`       | `false`           | Key tidak bisa di-_export_ lagi setelah dibuat — mitigasi tambahan terhadap XSS                 |
+| Parameter           | Nilai             | Alasan                                                                 |
+| ------------------- | ----------------- | ---------------------------------------------------------------------- |
+| Iterasi             | 600.000           | Rekomendasi minimum OWASP untuk PBKDF2-SHA256                          |
+| Hash function       | SHA-256           | Aman, didukung bawaan Web Crypto API browser                           |
+| Panjang `masterKey` | 256-bit           | Wrapping key untuk `vaultKey`                                          |
+| Panjang `vaultSalt` | 16 byte (128-bit) | Dibuat sekali saat register; mencegah serangan _rainbow table_         |
+| `extractable`       | `false`           | Key tidak bisa di-export keluar memori browser — proteksi terhadap XSS |
 
 ### 2. Envelope Encryption — `vaultKey` dibungkus oleh `masterKey`
 
-```
+```text
 vaultKey (256-bit random, dibuat sekali saat setup Master Password)
         ↓  (encrypt / wrap pakai masterKey, AES-GCM)
    encryptedVaultKey  ← disimpan permanen di database
 ```
 
-`vaultKey` inilah yang benar-benar mengenkripsi/mendekripsi tiap `VaultItem`. `vaultKey` **tidak pernah berubah** seumur akun — sehingga ganti Master Password cukup membungkus ulang `vaultKey` yang sama dengan `masterKey` baru, tanpa menyentuh isi vault.
-
 ### 3. Enkripsi/Dekripsi Vault Item — AES-256-GCM (pakai `vaultKey`)
 
-| Parameter          | Nilai            | Alasan                                                                          |
-| ------------------ | ---------------- | ------------------------------------------------------------------------------- |
-| Mode               | GCM              | Punya _authentication tag_ bawaan — otomatis mendeteksi tampering / key salah   |
-| Panjang `iv`       | 12 byte (96-bit) | Standar/optimal untuk AES-GCM, **wajib unik** tiap proses enkripsi              |
-| `vaultSalt` & `iv` | Tidak rahasia    | Aman disimpan plain di database — fungsinya mencegah pola, bukan menyembunyikan |
+| Parameter          | Nilai            | Alasan                                                                       |
+| ------------------ | ---------------- | ---------------------------------------------------------------------------- |
+| Mode               | GCM              | Punya _authentication tag_ bawaan — mendeteksi manipulasi data / kunci salah |
+| Panjang `iv`       | 12 byte (96-bit) | Standar optimal untuk AES-GCM, **wajib unik** setiap proses enkripsi         |
+| `vaultSalt` & `iv` | Tidak rahasia    | Aman disimpan plain di database — mencegah pola, bukan menyembunyikan        |
 
-> Implementasi lengkap ada di [`lib/crypto.ts`](./lib/crypto.ts).
-
----
-
-## 🗄️ Database Schema
-
-Ringkasan model utama (lihat [`prisma/schema.prisma`](./prisma/schema.prisma) untuk detail lengkap):
-
-```prisma
-enum VaultItemType {
-  ACCOUNT
-  NOTE
-}
-
-model User {
-  // ...field Better Auth lainnya
-  vaultSalt         String
-  encryptedVaultKey String?     // null sampai user setup Master Password
-  encryptedVaultKeyIv String?
-  vaultItems        VaultItem[]
-}
-
-model VaultItem {
-  id       String @id @default(cuid())
-  userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // --- Metadata (plaintext) ---
-  type   VaultItemType @default(ACCOUNT)
-  title  String
-  url    String?
-  pinned Boolean       @default(false)
-
-  // --- Encrypted payload (dienkripsi pakai vaultKey) ---
-  ciphertext String // base64: JSON berisi username, password, notes, dll
-  iv         String // base64: IV unik, generate baru tiap encrypt
-  encVersion Int    @default(1) // buat future-proofing algoritma enkripsi
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([userId, type])
-}
-```
-
-**Catatan desain:** `title`, `url` dan sebagainya disimpan plain agar bisa menampilkan daftar vault item tanpa perlu mendekripsi semuanya terlebih dahulu. Data sensitif (username, password, notes) digabung jadi satu JSON lalu dienkripsi sebagai satu `ciphertext` menggunakan `vaultKey`.
+> Implementasi lengkap tersedia di folder [`src/lib/crypto/`](./src/lib/crypto).
 
 ---
 
 ## 🚀 Getting Started
 
+### 1. Prasyarat
+
+- Node.js versi 20 atau 24+
+- Akun [Supabase](https://supabase.com/) (atau instance PostgreSQL lainnya)
+- Akun [Resend](https://resend.com/) untuk pengiriman email verifikasi
+
+### 2. Instalasi
+
 ```bash
+# Clone repositori
+git clone https://github.com/sannxyz/centinela.git
+cd centinela
+
 # Install dependencies
 npm install
 
-# Setup environment variables
+# Salin konfigurasi environment
 cp .env.example .env
-# Isi DATABASE_URL, BETTER_AUTH_SECRET, RESEND_API_KEY, dll.
+```
 
-# Generate Prisma client & jalankan migration
+### 3. Setup Environment Variables (`.env`)
+
+Isi variabel di file `.env`:
+
+```env
+# Database Connection (Supabase Transaction Pooler)
+DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true"
+
+# Direct Connection (Session Pooler untuk migrasi Prisma)
+DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres"
+
+# Resend API Key
+RESEND_API_KEY="re_xxxxxxxxxxxx"
+
+# Better Auth Configuration
+BETTER_AUTH_SECRET="your-32-character-random-secret"
+BETTER_AUTH_URL="http://localhost:3000"
+
+# Opsional: Cron Secret untuk mengamankan route /api/cron/keep-alive
+CRON_SECRET="your-cron-secret-key"
+```
+
+### 4. Database Setup & Menjalankan Aplikasi
+
+```bash
+# Generate Prisma Client & jalankan migrasi
 npx prisma generate
 npx prisma migrate dev
+
+# Uji coba koneksi database
+npm run db:keep-alive
 
 # Jalankan development server
 npm run dev
 ```
 
-Buka [http://localhost:3000](http://localhost:3000) di browser.
+Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
+
+---
+
+## 🧪 Skrip yang Tersedia
+
+- `npm run dev` — Menjalankan development server Next.js.
+- `npm run build` — Melakukan linting dan membuat build produksi.
+- `npm run test` — Menjalankan automated test suite menggunakan Vitest.
+- `npm run test:watch` — Menjalankan Vitest dalam mode watch interaktif.
+- `npm run lint` — Memeriksa kualitas kode dengan ESLint.
+- `npm run db:keep-alive` — Menjalankan uji ping ke database Supabase untuk memastikan koneksi aktif.
+
+---
+
+## ⚙️ Supabase Anti-Pause (GitHub Actions)
+
+Supabase Free Tier otomatis menghentikan (_pause_) project jika tidak ada aktivitas selama 7 hari. Repository ini dilengkapi workflow GitHub Actions di `.github/workflows/keep-alive.yml` yang otomatis melakukan query ringan ke database setiap 3 hari sekali.
+
+**Cara mengaktifkannya di GitHub:**
+
+1. Masuk ke repository GitHub Anda: **Settings** > **Secrets and variables** > **Actions**.
+2. Buat secret baru bernama `DATABASE_URL`.
+3. Masukkan connection string Supabase Anda.
+4. Selesai! GitHub Actions akan berjalan otomatis setiap 3 hari sekali tanpa perlu menyalakan komputer lokal Anda.
 
 ---
 
 ## ⚠️ Catatan Keamanan
 
-- **Master Password tidak bisa direset** jika lupa. Karena server tidak pernah menyimpan `masterKey` atau `vaultKey` dalam bentuk yang bisa dibuka tanpa Master Password, tidak ada mekanisme "forgot password" untuk Master Password — ini adalah konsekuensi yang melekat pada desain zero-knowledge, bukan kekurangan fitur.
-- **Ganti Master Password aman & ringan** — karena `vaultKey` dipisah dari `masterKey` (envelope encryption), mengganti Master Password hanya membungkus ulang `vaultKey` yang sama, tanpa perlu decrypt-encrypt ulang seluruh `VaultItem`.
-- Project ini dibuat untuk tujuan pembelajaran/portofolio. Untuk skenario produksi, pertimbangkan audit keamanan independen sebelum digunakan menyimpan data sensitif yang sesungguhnya.
+- **Master Password tidak bisa direset** jika lupa: Karena server tidak pernah menyimpan `masterKey` atau `vaultKey`, tidak ada tombol "Forgot Master Password" konvensional. Mereset Master Password akan menghapus seluruh data vault demi keamanan.
+- **Ganti Master Password aman & ringan**: Dengan envelope encryption, mengganti Master Password hanya membungkus ulang `vaultKey` yang sama tanpa perlu decrypt-encrypt ulang item vault.
+- **Peringatan GitGuardian pada Test Credentials**: String password di dalam `src/test/vault-crypto.test.ts` hanyalah data tiruan (_mock data_) untuk unit testing Vitest dan bukan password akun atau database yang sebenarnya.
 
 ---
 
 ## 📄 Lisensi
 
-MIT
+MIT License. Dibuat oleh [Joko Santoso](https://github.com/sannxyz).

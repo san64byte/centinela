@@ -1,10 +1,10 @@
 # 📄 Product Requirement Document (PRD): Centinela
 
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0  
 **Project Name:** Centinela  
 **Classification:** Security / Password Management  
 **Status:** In Production / Active Development  
-**Author:** Centinela Engineering Team  
+**Author:** Joko Santoso / Centinela Team  
 **Last Updated:** September 2026
 
 ---
@@ -75,6 +75,8 @@ graph LR
     A --> C[Modul Master Password]
     A --> D[Modul Vault Brankas]
     A --> E[Modul Pengaturan Akun]
+    A --> F[Modul Password Generator]
+    A --> G[Modul Otomasi Maintenance]
 
     B --> B1[Register / Login]
     B --> B2[Verifikasi Email]
@@ -96,6 +98,13 @@ graph LR
     E --> E3[Ganti Master Password Rewrap]
     E --> E4[Emergency Reset Master Password]
     E --> E5[Hapus Akun Permanen]
+
+    F --> F1[Generate Password Kriptografis]
+    F --> F2[Kustomisasi Panjang & Karakter]
+    F --> F3[Kalkulasi Kekuatan Password]
+
+    G --> G1[GitHub Actions Supabase Ping]
+    G --> G2[API Route Keep-Alive]
 ```
 
 ### 4.1. Modul Autentikasi (Better Auth)
@@ -129,13 +138,26 @@ graph LR
 
 - **FR-SET-1 (Ganti Master Password):** Pengguna dapat mengganti Master Password. Sistem meng-unwrap `vaultKey` dengan password lama, lalu me-rewrap `vaultKey` dengan Master Password baru tanpa perlu mengenkripsi ulang seluruh item vault.
 - **FR-SET-2 (Reset Master Password):** Jika pengguna lupa Master Password, tersedia fitur reset darurat yang akan menghapus seluruh isi vault dan mereset status `encryptedVaultKey` ke null demi keamanan.
-- **FR-SET-3 (Hapus Akun):** Penghapusan akun secara permanen beserta seluruh rekaman database terkait melalui konfirmasi email.
+- **FR-SET-3 (Hapus Akun):** Penghapusan akun secara permanen beserta seluruh rekaman database terkait.
+
+### 4.5. Modul Password Generator
+
+- **FR-GEN-1 (CSPRNG):** Menggunakan `window.crypto.getRandomValues` untuk menghasilkan karakter acak yang tidak dapat ditebak secara kriptografis.
+- **FR-GEN-2 (Kustomisasi Karakter):** Pengguna dapat menyesuaikan panjang password (8 hingga 64 karakter) serta mengaktifkan/menonaktifkan variasi huruf besar, huruf kecil, angka, dan simbol.
+- **FR-GEN-3 (Avoid Ambiguous):** Pilihan untuk menyaring karakter ambigu yang rawan tertukar (seperti `1`, `l`, `I`, `0`, `O`).
+- **FR-GEN-4 (Integrasi Form):** Tersedia tombol modal langsung di form pendaftaran dan setup master password untuk memasukkan password hasil generate ke input field terkait.
+
+### 4.6. Modul Pemeliharaan Database (Keep-Alive Automation)
+
+- **FR-MAINT-1 (Scheduled Cron):** GitHub Actions otomatis berjalan setiap 3 hari sekali (`0 3 */3 * *`) untuk mengeksekusi query ringan `SELECT NOW();` ke database Supabase agar status free-tier tidak di-pause.
+- **FR-MAINT-2 (Manual Trigger):** Workflow mendukung `workflow_dispatch` untuk eksekusi manual kapan saja via GitHub UI.
+- **FR-MAINT-3 (API Route Cron):** Menyediakan route handler Next.js `/api/cron/keep-alive` yang dilindungi header Bearer `CRON_SECRET` untuk integrasi Vercel Cron atau pemanggil eksternal.
 
 ---
 
 ## 5. Spesifikasi Teknis & Kriptografi
 
-```
+```text
 +-------------------------------------------------------------------------+
 |                          ARSITEKTUR ENKRIPSI                            |
 +-------------------------------------------------------------------------+
@@ -178,10 +200,11 @@ graph LR
 - **UI & Styling:** React 19, Tailwind CSS v4, shadcn/ui, Radix UI Primitives, Lucide Icons
 - **State Management:** React Context API (`VaultKeyProvider`) + In-Memory State
 - **Form & Validation:** TanStack Form + Zod v4
-- **Autentikasi:** Better Auth dengan Prisma Adapter & PostgreSQL
-- **Database & ORM:** PostgreSQL + Prisma ORM (`@prisma/adapter-pg`)
+- **Autentikasi:** Better Auth dengan Prisma Adapter
+- **Database & ORM:** Supabase (PostgreSQL) + Prisma ORM (`@prisma/adapter-pg`)
 - **Email Service:** Resend API
 - **Testing Suite:** Vitest
+- **Otomasi & CI/CD:** GitHub Actions (Node.js 24 Runner)
 
 ### 6.2. Alur Pembacaan Data (Read Flow)
 
@@ -287,15 +310,16 @@ export type ActionResponse<T = void> =
 
 ### 8.1. Ringkasan Endpoint Server Action
 
-| Action Function            | File Sumber                            | Input Payload                            | Output Sukses                    |
-| :------------------------- | :------------------------------------- | :--------------------------------------- | :------------------------------- |
-| `saveEncryptedVaultKey`    | `src/app/(main)/setup-vault/action.ts` | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
-| `createEncryptedVaultItem` | `src/app/(main)/vault/action.ts`       | `EncryptedVaultItemInput`                | `ActionResponse<{ id: string }>` |
-| `updateEncryptedVaultItem` | `src/app/(main)/vault/action.ts`       | `itemId, EncryptedVaultItemInput`        | `ActionResponse`                 |
-| `deleteVaultItem`          | `src/app/(main)/vault/action.ts`       | `id`                                     | `ActionResponse`                 |
-| `toggleVaultItemPin`       | `src/app/(main)/vault/action.ts`       | `id, pinned`                             | `ActionResponse`                 |
-| `updateMasterPassword`     | `src/app/(main)/settings/action.ts`    | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
-| `resetMasterPassword`      | `src/app/(main)/settings/action.ts`    | `-`                                      | `ActionResponse`                 |
+| Action Function            | File Sumber                         | Input Payload                            | Output Sukses                    |
+| :------------------------- | :---------------------------------- | :--------------------------------------- | :------------------------------- |
+| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
+| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | `EncryptedVaultItemInput`                | `ActionResponse<{ id: string }>` |
+| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | `itemId, EncryptedVaultItemInput`        | `ActionResponse`                 |
+| `deleteVaultItem`          | `src/actions/vault.action.ts`       | `id`                                     | `ActionResponse`                 |
+| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | `id, pinned`                             | `ActionResponse`                 |
+| `updateMasterPassword`     | `src/actions/settings.action.ts`    | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
+| `resetMasterPassword`      | `src/actions/settings.action.ts`    | `-`                                      | `ActionResponse`                 |
+| `deleteUserAccount`        | `src/actions/settings.action.ts`    | `-`                                      | `ActionResponse`                 |
 
 ---
 
@@ -348,10 +372,11 @@ gantt
     Core Zero-Knowledge Engine       :done, 2026-Q1, 2026-Q2
     Better Auth & Settings           :done, 2026-Q2, 2026-Q3
     Vault Management & Test Suite    :done, 2026-Q3, 2026-Q3
+    Password Generator Built-in      :done, 2026-Q3, 2026-Q3
+    Automated Supabase Keep-Alive    :done, 2026-Q3, 2026-Q3
     section Fase 2 (Q4 2026)
     Two-Factor Authentication (2FA)  :active, 2026-Q4, 2026-Q4
     WebAuthn / Passkey Unlock        :2026-Q4, 2027-Q1
-    Password Generator Generator UI  :2026-Q4, 2026-Q4
     section Fase 3 (2027)
     Browser Extension (Chrome/Edge)  :2027-Q1, 2027-Q2
     Secure File & Attachment Vault   :2027-Q2, 2027-Q3
@@ -360,7 +385,6 @@ gantt
 
 - **Two-Factor Authentication (TOTP / Authenticator App):** Menambah lapisan keamanan kedua saat login akun.
 - **Passkey / Biometric Unlock:** Memanfaatkan WebAuthn untuk membuka vault lokal via Fingerprint / Face ID tanpa harus mengetik Master Password berulang kali.
-- **Built-in Password Generator:** Alat bantu pembuatan password acak berkekuatan tinggi di dalam modal form.
 - **Browser Extension:** Ekstensi browser untuk fitur _Auto-fill_ dan _Auto-save_ kredensial langsung pada form website.
 - **Export & Import Vault:** Fitur backup terenkripsi dan impor dari pengelola password lain (Bitwarden, 1Password, Chrome CSV).
 
