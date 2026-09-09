@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prepare": "husky",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:keep-alive": "node scripts/keep-alive.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

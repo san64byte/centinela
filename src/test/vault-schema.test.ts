@@ -3,7 +3,7 @@ import {
   vaultItemFormSchema,
   setupMasterPasswordSchema,
   masterPasswordSchema,
-} from '@/features/vault/schemas/vault-schema';
+} from '@/schemas/vault-schema';
 
 describe('Vault Schema Validation', () => {
   describe('Master Password Schema', () => {

@@ -4,12 +4,9 @@ import {
   updateEncryptedVaultItem,
   deleteVaultItem,
   toggleVaultItemPin,
-} from '@/features/vault/actions/vault.action';
-import { saveEncryptedVaultKey } from '@/features/vault/actions/setup-vault.action';
-import {
-  updateMasterPassword,
-  resetMasterPassword,
-} from '@/features/settings/actions/settings.action';
+} from '@/actions/vault.action';
+import { saveEncryptedVaultKey } from '@/actions/setup-vault.action';
+import { updateMasterPassword, resetMasterPassword } from '@/actions/settings.action';
 import prisma from '@/lib/prisma';
 import { getServerSession } from '@/lib/get-session';
 import { Session, User as AuthUser } from '@/lib/auth';
@@ -39,6 +36,7 @@ vi.mock('@/lib/prisma', () => {
         deleteMany: vi.fn(),
       },
       $transaction: vi.fn(),
+      $executeRaw: vi.fn(),
     },
   };
 });
@@ -213,17 +211,34 @@ describe('Vault Server Actions', () => {
   });
 
   describe('toggleVaultItemPin', () => {
-    it('harus berhasil mengubah status pin item', async () => {
+    it('harus berhasil mengubah status pin item menggunakan raw SQL tanpa mengubah updatedAt', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
-
-      vi.mocked(prisma.vaultItem.updateMany).mockResolvedValueOnce({ count: 1 });
+      vi.mocked(prisma.$executeRaw).mockResolvedValueOnce(1);
 
       const res = await toggleVaultItemPin('item_abc', true);
       expect(res.success).toBe(true);
-      expect(prisma.vaultItem.updateMany).toHaveBeenCalledWith({
-        where: { id: 'item_abc', userId: mockUser.id },
-        data: expect.objectContaining({ pinned: true }),
-      });
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('harus menolak jika user tidak terautentikasi (Unauthorized)', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(null);
+
+      const res = await toggleVaultItemPin('item_abc', true);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Unauthorized');
+      }
+    });
+
+    it('harus mengembalikan error jika ID item tidak ditemukan', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+      vi.mocked(prisma.$executeRaw).mockResolvedValueOnce(0);
+
+      const res = await toggleVaultItemPin('nonexistent_id', true);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Vault item not found');
+      }
     });
   });
 

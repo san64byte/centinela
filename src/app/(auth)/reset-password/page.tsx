@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import ResetPasswordForm from '@/features/auth/components/reset-password-form';
+import ResetPasswordForm from '@/components/auth/reset-password-form';
 import CenteredFormLayout from '@/components/wrapped-form';
 
 export const metadata: Metadata = {

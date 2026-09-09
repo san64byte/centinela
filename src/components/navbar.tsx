@@ -13,28 +13,30 @@ export default async function Navbar() {
   if (!user) return null;
 
   return (
-    <nav
+    <header
       className={cn(
         'sticky top-0 right-0 left-0 z-50 w-full border-b border-border/10 bg-background/30 backdrop-blur-sm',
       )}
     >
-      <WrapperContent className="flex justify-between gap-6 py-3">
-        <Link
-          href="/vault"
-          className="flex items-center gap-1.5 transition-opacity hover:opacity-85"
-        >
-          <Image
-            className="h-5 w-5 shrink-0"
-            src="/centinela.svg"
-            width={100}
-            height={100}
-            alt="Logo centinela"
-          />
-          <span className="text-lg font-light text-foreground">Centinela</span>
-        </Link>
+      <nav aria-label="Main Navigation">
+        <WrapperContent className="flex justify-between gap-6 py-3">
+          <Link
+            href="/vault"
+            className="flex items-center gap-1 transition-opacity hover:opacity-85"
+          >
+            <Image
+              className="h-6 w-6 shrink-0"
+              src="/centinela.svg"
+              width={100}
+              height={100}
+              alt="Logo centinela"
+            />
+            <span className="text-lg text-foreground">Centinela</span>
+          </Link>
 
-        <UserDropdown user={user} />
-      </WrapperContent>
-    </nav>
+          <UserDropdown user={user} />
+        </WrapperContent>
+      </nav>
+    </header>
   );
 }

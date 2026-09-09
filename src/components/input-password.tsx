@@ -9,16 +9,18 @@ export const InputPassword = ({ className, ...props }: React.ComponentProps<type
   return (
     <div className="relative">
       <Input
-        className={cn('pr-10 [&::-ms-reveal]:hidden', className)}
+        className={cn('pr-10 font-mono tracking-wide [&::-ms-reveal]:hidden', className)}
         type={showPassword ? 'text' : 'password'}
         {...props}
       />
       <button
         type="button"
         onClick={() => setShowPassword(!showPassword)}
-        className="absolute top-1/2 right-2 -translate-y-1/2 transform cursor-pointer text-muted-foreground hover:text-foreground"
+        aria-label={showPassword ? 'Hide password' : 'Show password'}
+        title={showPassword ? 'Hide password' : 'Show password'}
+        className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        {showPassword ? <EyeOffIcon className="size-5" /> : <EyeIcon className="size-5" />}
+        {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useSignOutState } from '@/features/auth/hooks/use-signout';
+import { useSignOutState } from '@/hooks/use-signout';
 import { LoaderIcon } from 'lucide-react';
 
 export function SignOutOverlay() {

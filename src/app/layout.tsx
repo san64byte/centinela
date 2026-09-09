@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
-import { Architects_Daughter } from 'next/font/google';
+import { Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import { SignOutOverlay } from '@/components/signout-overlay';
+import { ThemeProvider } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 
-const fontSans = Architects_Daughter({
+const geistMono = Geist_Mono({
   subsets: ['latin'],
   variable: '--font-sans',
-  weight: ['400'],
 });
 
 export const metadata: Metadata = {
@@ -24,17 +24,26 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className={cn('antialiased', fontSans.variable)} suppressHydrationWarning>
-        {children}
-        <Toaster
-          toastOptions={{
-            classNames: {
-              toast: 'font-sans',
-            },
-          }}
-        />
-        <SignOutOverlay />
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={cn(
+          'min-h-screen font-sans antialiased',
+          geistMono.variable,
+          '[--font-mono:var(--font-sans)]',
+          '[--font-serif:var(--font-sans)]',
+        )}
+        suppressHydrationWarning
+      >
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster />
+          <SignOutOverlay />
+        </ThemeProvider>
       </body>
     </html>
   );

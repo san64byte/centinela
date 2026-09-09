@@ -6,21 +6,27 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { Button } from './ui/button';
 import Link from 'next/link';
-import { Loader2, LogOut, Settings, UserRound, Vault } from 'lucide-react';
+import { Loader2, LogOut, Moon, Settings, Sun, SunMoon, UserRound, Vault } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { User } from '@/lib/auth';
-import { useVaultKey } from '@/features/vault/hooks/use-vault-key';
-import { useSignOutState } from '@/features/auth/hooks/use-signout';
+import { useVaultKey } from '@/hooks/use-vault-key';
+import { useSignOutState } from '@/hooks/use-signout';
+import { useTheme } from 'next-themes';
 
 export default function UserDropdown({ user }: { user: User }) {
   const { lock } = useVaultKey();
   const router = useRouter();
+  const { setTheme, theme } = useTheme();
 
   const isSignOut = useSignOutState((s) => s.isSignOut);
   const setSignOut = useSignOutState((s) => s.setSignOut);
@@ -50,7 +56,7 @@ export default function UserDropdown({ user }: { user: User }) {
           <UserRound className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="mb-1.5">
             <div className="flex flex-col gap-1">
@@ -60,20 +66,46 @@ export default function UserDropdown({ user }: { user: User }) {
               </span>
             </div>
           </DropdownMenuLabel>
-          <DropdownMenuItem asChild>
-            <Link href="/settings">
-              <Settings />
-              Settings
-            </Link>
-          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             <Link href="/vault">
-              <Vault />
+              <Vault className="size-4" />
               Vault
             </Link>
           </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/settings">
+              <Settings className="size-4" />
+              Settings
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <SunMoon className="size-4" />
+              Theme
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onClick={() => setTheme('light')}>
+                <Sun className="size-4" />
+                Light {theme === 'light' && '✓'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme('dark')}>
+                <Moon className="size-4" />
+                Dark {theme === 'dark' && '✓'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme('system')}>
+                <SunMoon className="size-4" />
+                System {theme === 'system' && '✓'}
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-            {isSignOut ? <Loader2 className="animate-spin" /> : <LogOut />}
+            {isSignOut ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogOut className="size-4" />
+            )}
             Sign Out
           </DropdownMenuItem>
         </DropdownMenuGroup>

@@ -8,7 +8,7 @@ import {
   rewrapVaultKey,
 } from '@/lib/crypto/keys';
 import { encryptData, decryptData } from '@/lib/crypto/encryption';
-import { AccountData, NoteData } from '@/features/vault/types/vault-type';
+import { AccountData, NoteData } from '@/types/vault-type';
 
 describe('Vault Cryptography (Zero-Knowledge & Envelope Encryption)', () => {
   const masterPassword = 'SuperSecretMasterPassword123!';

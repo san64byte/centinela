@@ -1,4 +1,4 @@
-import VaultClient from '@/features/vault/components/vault-client';
+import VaultClient from '@/components/vault/vault-client';
 import { getServerSession } from '@/lib/get-session';
 import { redirect } from 'next/navigation';
 import prisma from '@/lib/prisma';

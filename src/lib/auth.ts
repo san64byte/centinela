@@ -54,8 +54,8 @@ export const auth = betterAuth({
       sendDeleteAccountVerification: async ({ user, url }) => {
         await sendEmail({
           to: user.email,
-          subject: 'Konfirmasi hapus akun Centinela',
-          text: `Kamu meminta untuk menghapus akun Centinela dan seluruh isi vault-mu secara permanen. Klik link ini untuk konfirmasi: ${url}\n\nKalau ini bukan kamu, abaikan email ini dan segera ganti password akunmu.`,
+          subject: 'Confirm deletion of your Centinela account',
+          text: `You requested to permanently delete your Centinela account and all its vault contents. Click this link to confirm: ${url}\n\nIf this wasn't you, please ignore this email and change your account password immediately.`,
         });
       },
 

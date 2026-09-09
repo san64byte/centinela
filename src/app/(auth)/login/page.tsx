@@ -1,4 +1,4 @@
-import LoginForm from '@/features/auth/components/login-form';
+import LoginForm from '@/components/auth/login-form';
 import { Metadata } from 'next';
 import CenteredFormLayout from '@/components/wrapped-form';
 

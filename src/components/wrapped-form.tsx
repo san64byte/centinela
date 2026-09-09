@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import React from 'react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 type CenteredFormLayoutProps = {
   title: string;
@@ -13,24 +14,25 @@ export default function CenteredFormLayout({
   children,
 }: CenteredFormLayoutProps) {
   return (
-    <div className="w-full max-w-sm">
-      <div className="flex flex-col items-center text-center">
-        <div className="flex items-center justify-center rounded-md">
-          <Image
-            className="size-10"
-            src="/centinela.svg"
-            width={100}
-            height={100}
-            alt="Logo centinela"
-          />
-          {/* <UserRoundKey className="size-6" /> */}
-        </div>
-        <div className="mb-4 flex flex-col items-center gap-1 text-center">
-          <h1 className="text-2xl font-bold">{title}</h1>
-          <p className="text-sm text-balance text-muted-foreground">{description}</p>
-        </div>
-        {children}
-      </div>
+    <div className="w-full max-w-md">
+      <Card className="border-border/80 shadow-md">
+        <CardHeader className="flex flex-col items-center gap-2 pb-4 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 p-2 text-primary shadow-2xs">
+            <Image
+              className="size-7"
+              src="/centinela.svg"
+              width={100}
+              height={100}
+              alt="Centinela logo"
+            />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+            <p className="text-sm text-balance text-muted-foreground">{description}</p>
+          </div>
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+      </Card>
     </div>
   );
 }
