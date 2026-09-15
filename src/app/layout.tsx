@@ -41,7 +41,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           disableTransitionOnChange
         >
           {children}
-          <Toaster />
+          <Toaster
+            toastOptions={{
+              classNames: {
+                toast: 'font-sans',
+              },
+            }}
+          />
           <SignOutOverlay />
         </ThemeProvider>
       </body>

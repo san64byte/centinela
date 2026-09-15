@@ -14,7 +14,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import * as z from 'zod';
 
-export function isEmail(value: string): boolean {
+function isEmail(value: string): boolean {
   return z.email().safeParse(value).success;
 }
 
@@ -37,11 +37,10 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
 
       const callbacks = {
         onSuccess: () => {
-          toast('Login successfully');
+          toast.success('Logged in successfully');
           router.push('/vault');
         },
         onError: (ctx: ErrorContext) => {
-          console.log(ctx);
           setError(ctx.error.message || 'Something went wrong');
         },
       };

@@ -27,17 +27,10 @@ export const accountDataSchema = z
   .superRefine((data, ctx) => {
     const hasIdentifier = Boolean(data.email || data.username || data.phone);
     if (!hasIdentifier) {
-      const message = 'Please provide at least one: email, username, or phone number';
+      const message = 'Please provide at least one identifier: email, username/ID, or phone number';
       ctx.addIssue({ code: 'custom', message, path: ['email'] });
       ctx.addIssue({ code: 'custom', message, path: ['username'] });
       ctx.addIssue({ code: 'custom', message, path: ['phone'] });
-    }
-
-    const hasCredential = Boolean(data.password || data.pin);
-    if (!hasCredential) {
-      const message = 'Please provide at least one: password or PIN';
-      ctx.addIssue({ code: 'custom', message, path: ['password'] });
-      ctx.addIssue({ code: 'custom', message, path: ['pin'] });
     }
   });
 

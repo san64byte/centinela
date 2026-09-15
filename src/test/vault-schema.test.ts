@@ -100,7 +100,7 @@ describe('Vault Schema Validation', () => {
       expect(result.success).toBe(false);
     });
 
-    it('harus menolak jika tidak ada credential (password/pin)', () => {
+    it('harus valid jika tidak ada credential (password/pin bersifat opsional)', () => {
       const input = {
         type: 'ACCOUNT',
         title: 'No Credential Account',
@@ -116,7 +116,7 @@ describe('Vault Schema Validation', () => {
       };
 
       const result = vaultItemFormSchema.safeParse(input);
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
   });
 

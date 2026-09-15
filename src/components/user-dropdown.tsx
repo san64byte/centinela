@@ -37,13 +37,13 @@ export default function UserDropdown({ user }: { user: User }) {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          toast('Signed out successfully');
+          toast.success('Signed out successfully');
           lock();
           router.push('/login');
         },
         onError: (ctx) => {
           setSignOut(false);
-          toast(ctx.error.message || 'Something went wrong');
+          toast.error(ctx.error.message || 'Something went wrong');
         },
       },
     });

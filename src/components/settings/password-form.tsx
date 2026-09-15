@@ -33,7 +33,7 @@ export default function PasswordForm() {
         },
         {
           onSuccess: () => {
-            toast('Password changed successfully.');
+            toast.success('Password changed successfully.');
             form.reset();
           },
           onError: (ctx) => {

@@ -7,8 +7,6 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { generateSecurePassword } from '@/lib/crypto/password-generator';
 
-export { generateSecurePassword };
-
 export interface PasswordGeneratorProps {
   onApply: (password: string) => void;
   onClose?: () => void;

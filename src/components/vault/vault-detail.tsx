@@ -202,7 +202,7 @@ export default function VaultDetail({
           {vault.type === 'ACCOUNT' && (
             <>
               {renderField('Email', vault.data.email, { fieldName: 'email' })}
-              {renderField('Username', vault.data.username, { fieldName: 'username' })}
+              {renderField('Username / ID', vault.data.username, { fieldName: 'username' })}
               {renderField('Password', vault.data.password, {
                 fieldName: 'password',
                 isSecret: true,

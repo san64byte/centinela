@@ -41,7 +41,7 @@ export default function BasicInformationForm({ user }: { user: User }) {
       });
 
       if (isEqual(parsed, originalValues)) {
-        toast('No changes to save');
+        toast.info('No changes to save');
         return;
       }
 
@@ -54,7 +54,7 @@ export default function BasicInformationForm({ user }: { user: User }) {
           onSuccess: async () => {
             await refetch();
             router.refresh();
-            toast('Updated successfully');
+            toast.success('Updated successfully');
           },
           onError: (ctx) => {
             setError(ctx.error.message || 'Something went wrong');

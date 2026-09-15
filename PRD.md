@@ -1,305 +1,174 @@
 # 📄 Product Requirement Document (PRD): Centinela
 
-**Document Version:** 1.1.0  
-**Project Name:** Centinela  
-**Classification:** Security / Password Management  
+**Document Version:** 1.2.0  
+**Project:** Centinela  
+**Classification:** Security / Password & Secrets Management  
 **Status:** In Production / Active Development  
-**Author:** Joko Santoso / Centinela Team  
-**Last Updated:** September 2026
+**Author:** Joko Santoso
 
 ---
 
-## 📑 Daftar Isi
+## 1. Executive Summary
 
-1. [Ringkasan Eksekutif & Visi Produk](#1-ringkasan-eksekutif--visi-produk)
-2. [Prinsip Zero-Knowledge & Model Ancaman](#2-prinsip-zero-knowledge--model-ancaman)
-3. [Target Pengguna & Persona](#3-target-pengguna--persona)
-4. [Kebutuhan Fungsional (Functional Requirements)](#4-kebutuhan-fungsional-functional-requirements)
-5. [Spesifikasi Teknis & Kriptografi](#5-spesifikasi-teknis--kriptografi)
-6. [Arsitektur Sistem & Alur Data](#6-arsitektur-sistem--alur-data)
-7. [Skema Database (Data Modeling)](#7-skema-database-data-modeling)
-8. [Spesifikasi Server Actions & Kontrak Data](#8-spesifikasi-server-actions--kontrak-data)
-9. [Kebutuhan Non-Fungsional (Non-Functional Requirements)](#9-kebutuhan-non-fungsional-non-functional-requirements)
-10. [Strategi Pengujian & QA](#10-strategi-pengujian--qa)
-11. [Roadmap & Rencana Pengembangan Mendatang](#11-roadmap--rencana-pengembangan-mendatang)
+Centinela is a web-based, zero-knowledge password and secrets manager designed to protect sensitive user credentials and private notes. All sensitive data is encrypted on the client side before transmission, ensuring that the backend server and database only ever store ciphertext.
+
+### Core Value Proposition
+
+- **True Zero-Knowledge:** Even in the event of a total database leak or compromised server, user data cannot be decrypted without the user's Master Password.
+- **Envelope Encryption:** Decouples user-derived keys from the vault encryption key, enabling seamless Master Password changes without re-encrypting vault items.
+- **Flexible Identifiers:** Accommodates modern account formats (usernames, member numbers, account IDs) alongside traditional email/password pairs.
 
 ---
 
-## 1. Ringkasan Eksekutif & Visi Produk
+## 2. Threat Model & Security Invariants
 
-### 1.1. Latar Belakang
+### 2.1. Security Invariants
 
-Di era maraknya kebocoran data (_data breaches_), menyimpan kata sandi dan catatan rahasia di server cloud tradisional menimbulkan risiko besar. Jika database server bocor, data sensitif pengguna berpotensi terekspos.
+1. **Zero Plaintext on Wire/Disk:** Plaintext credentials and notes never leave the client browser unencrypted.
+2. **Master Password Isolation:** The Master Password is never transmitted, hashed on server, or stored.
+3. **In-Memory Lifetime:** Keys (`masterKey`, `vaultKey`) reside strictly in browser RAM and are purged upon page refresh or explicit lock.
+4. **Tamper Proofing:** Ciphertext integrity is enforced via AES-256-GCM authentication tags.
 
-### 1.2. Solusi: Centinela
+### 2.2. Threat Matrix
 
-**Centinela** (_bahasa Spanyol: penjaga / sentry_) adalah aplikasi pengelola kata sandi dan catatan rahasia berbasis web dengan prinsip **Zero-Knowledge** dan **Envelope Encryption**.
-
-Semua data sensitif (username, password, nomor telepon, PIN, catatan rahasia) dienkripsi secara penuh di browser pengguna (client-side) menggunakan **Web Crypto API** sebelum dikirim ke server. Server hanya bertindak sebagai media sinkronisasi _ciphertext_ dan tidak memiliki kemampuan matematis untuk membaca data aslinya.
-
----
-
-## 2. Prinsip Zero-Knowledge & Model Ancaman
-
-### 2.1. Aturan Dasar Zero-Knowledge Centinela
-
-1. **Master Password Tidak Pernah Menyentuh Jaringan:** Master Password pengguna tidak pernah dikirim, dicatat, atau disimpan di server.
-2. **Kunci Asli Tidak Pernah Disimpan Plain:** Kunci enkripsi vault (`vaultKey`) hanya tersimpan di database dalam bentuk terbungkus (_wrapped_) oleh kunci turunan Master Password (`masterKey`).
-3. **Kunci Hanya Hidup di Memori Sementara:** `masterKey` dan `vaultKey` hanya disimpan di RAM browser selama sesi aktif dan otomatis hilang saat halaman di-refresh atau tab ditutup.
-4. **Deteksi Tampering Bawaan:** Menggunakan cipher **AES-256-GCM** yang memiliki _Authentication Tag_ bawaan untuk mendeteksi data yang dimanipulasi atau percobaan pembongkaran dengan Master Password yang salah.
-
-### 2.2. Model Ancaman (Threat Model)
-
-| Skenario Ancaman                   | Perlindungan Centinela                                                                                                  |
-| :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
-| **Database Server Bocor / Dumped** | Penyerang hanya mendapatkan _ciphertext_, _IV_, dan _salt_. Tanpa Master Password pengguna, data tidak bisa didekripsi. |
-| **Developer / Admin Nakal**        | Pengembang aplikasi tidak memiliki kunci dekripsi dan tidak bisa membuka brankas pengguna.                              |
-| **Man-in-the-Middle (MITM)**       | Data sudah dalam bentuk terenkripsi kuat sebelum meninggalkan browser via koneksi HTTPS.                                |
-| **Brute Force Serangan Kamus**     | Derivasi kunci menggunakan PBKDF2-SHA256 dengan 600.000 iterasi memperlambat kalkulasi penyerang secara signifikan.     |
+| Threat Scenario                   | Risk Level | Mitigation Strategy                                                                                              |
+| :-------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------- |
+| **Database Compromise**           | Critical   | Attacker acquires only AES-GCM ciphertext, random IVs, and PBKDF2 salts. Data remains mathematically unreadable. |
+| **Malicious Server / Insider**    | High       | Server has no cryptographic access to decrypt payloads without the Master Password.                              |
+| **Man-in-the-Middle (MITM)**      | Medium     | Data is encrypted end-to-end client-side before transport over HTTPS.                                            |
+| **Brute-Force Dictionary Attack** | High       | PBKDF2-SHA256 with 600,000 iterations dramatically increases computational cost per guess.                       |
+| **XSS Key Extraction**            | High       | Keys are marked `extractable: false` in Web Crypto and never written to `localStorage` or `sessionStorage`.      |
 
 ---
 
-## 3. Target Pengguna & Persona
-
-1. **Privacy-Conscious Individuals:** Pengguna yang membutuhkan tempat menyimpan kredensial akun dan informasi rahasia tanpa mempercayai pihak ketiga.
-2. **Developers & Tech Workers:** Pengguna teknis yang ingin transparansi kriptografi terstandarisasi (Web Crypto API, AES-GCM, PBKDF2).
-3. **General Users:** Pengguna umum yang membutuhkan UI modern, responsif, dan mudah digunakan untuk manajemen akun harian.
-
----
-
-## 4. Kebutuhan Fungsional (Functional Requirements)
+## 3. Cryptographic Architecture
 
 ```mermaid
-graph LR
-    A[Pengguna] --> B[Modul Autentikasi]
-    A --> C[Modul Master Password]
-    A --> D[Modul Vault Brankas]
-    A --> E[Modul Pengaturan Akun]
-    A --> F[Modul Password Generator]
-    A --> G[Modul Otomasi Maintenance]
-
-    B --> B1[Register / Login]
-    B --> B2[Verifikasi Email]
-    B --> B3[Reset Password Akun]
-
-    C --> C1[Setup Master Password Awal]
-    C --> C2[Unlock Vault di Memori]
-    C --> C3[Lock Vault Manual / Refresh]
-
-    D --> D1[Tambah Item Akun / Catatan]
-    D --> D2[Lihat / Dekripsi Item]
-    D --> D3[Edit & Update Item]
-    D --> D4[Pin / Unpin Item]
-    D --> D5[Hapus Item Permanen]
-    D --> D6[Search & Kategori Filter]
-
-    E --> E1[Ganti Informasi Profil]
-    E --> E2[Ganti Email Akun]
-    E --> E3[Ganti Master Password Rewrap]
-    E --> E4[Emergency Reset Master Password]
-    E --> E5[Hapus Akun Permanen]
-
-    F --> F1[Generate Password Kriptografis]
-    F --> F2[Kustomisasi Panjang & Karakter]
-    F --> F3[Kalkulasi Kekuatan Password]
-
-    G --> G1[GitHub Actions Supabase Ping]
-    G --> G2[API Route Keep-Alive]
-```
-
-### 4.1. Modul Autentikasi (Better Auth)
-
-- **FR-AUTH-1:** Registrasi dengan Nama, Email, Username, dan Password Akun.
-- **FR-AUTH-2:** Hook database otomatis mengenerate `vaultSalt` (16 bytes acak, Base64) saat registrasi user baru.
-- **FR-AUTH-3:** Verifikasi email wajib melalui tautan konfirmasi yang dikirimkan via email (Resend provider).
-- **FR-AUTH-4:** Login dengan fleksibilitas menggunakan Email atau Username.
-- **FR-AUTH-5:** Fitur _Forgot Password_ untuk password login akun (tidak merusak data vault).
-
-### 4.2. Modul Master Password & Vault Lifecycle
-
-- **FR-VAULT-1 (Setup Awal):** Setelah verifikasi akun, user diarahkan untuk membuat Master Password pertama kali.
-- **FR-VAULT-2 (Key Wrapping):** Sistem client membuat `vaultKey` acak, melakukan enkripsi (_wrap_) dengan `masterKey`, dan mengirimkan `encryptedVaultKey` + `encryptedVaultKeyIv` ke server.
-- **FR-VAULT-3 (Unlock):** Jika state `vaultKey` bernilai null di context, antarmuka brankas terkunci dan menampilkan modal unlock. User memasukkan Master Password untuk meng-unwrap `vaultKey`.
-- **FR-VAULT-4 (Lock):** User dapat mengunci brankas kapan saja atau otomatis terkunci saat halaman di-refresh.
-
-### 4.3. Modul Manajemen Item Vault
-
-- **FR-ITEM-1 (Tipe Data):** Mendukung 2 tipe data utama:
-  1. `ACCOUNT`: Title, URL, Email/Username/Phone, Password, PIN, Notes.
-  2. `NOTE`: Title, URL, Content Teks Bebas (hingga 10.000 karakter).
-- **FR-ITEM-2 (Metadata vs Sensitif):**
-  - _Metadata Plaintext (di server):_ `title`, `url`, `type`, `pinned`, `encVersion`, `createdAt`, `updatedAt`.
-  - _Payload Sensitif (Terenkripsi):_ Seluruh field kredensial dan isi catatan digabung menjadi JSON dan dienkripsi menjadi `ciphertext` + `iv`.
-- **FR-ITEM-3 (CRUD):** Tambah item baru, update item yang ada, hapus item, dan toggle status pinned.
-- **FR-ITEM-4 (Pencarian & Filter):** Pencarian instan client-side berdasarkan judul, email, atau username, serta filter kategori (`ALL`, `ACCOUNT`, `NOTE`).
-- **FR-ITEM-5 (Clipboard Aman):** Salin field kredensial (username/password/PIN) langsung ke clipboard dengan konfirmasi toast.
-
-### 4.4. Modul Pengaturan & Keamanan
-
-- **FR-SET-1 (Ganti Master Password):** Pengguna dapat mengganti Master Password. Sistem meng-unwrap `vaultKey` dengan password lama, lalu me-rewrap `vaultKey` dengan Master Password baru tanpa perlu mengenkripsi ulang seluruh item vault.
-- **FR-SET-2 (Reset Master Password):** Jika pengguna lupa Master Password, tersedia fitur reset darurat yang akan menghapus seluruh isi vault dan mereset status `encryptedVaultKey` ke null demi keamanan.
-- **FR-SET-3 (Hapus Akun):** Penghapusan akun secara permanen beserta seluruh rekaman database terkait.
-
-### 4.5. Modul Password Generator
-
-- **FR-GEN-1 (CSPRNG):** Menggunakan `window.crypto.getRandomValues` untuk menghasilkan karakter acak yang tidak dapat ditebak secara kriptografis.
-- **FR-GEN-2 (Kustomisasi Karakter):** Pengguna dapat menyesuaikan panjang password (8 hingga 64 karakter) serta mengaktifkan/menonaktifkan variasi huruf besar, huruf kecil, angka, dan simbol.
-- **FR-GEN-3 (Avoid Ambiguous):** Pilihan untuk menyaring karakter ambigu yang rawan tertukar (seperti `1`, `l`, `I`, `0`, `O`).
-- **FR-GEN-4 (Integrasi Form):** Tersedia tombol modal langsung di form pendaftaran dan setup master password untuk memasukkan password hasil generate ke input field terkait.
-
-### 4.6. Modul Pemeliharaan Database (Keep-Alive Automation)
-
-- **FR-MAINT-1 (Scheduled Cron):** GitHub Actions otomatis berjalan setiap 3 hari sekali (`0 3 */3 * *`) untuk mengeksekusi query ringan `SELECT NOW();` ke database Supabase agar status free-tier tidak di-pause.
-- **FR-MAINT-2 (Manual Trigger):** Workflow mendukung `workflow_dispatch` untuk eksekusi manual kapan saja via GitHub UI.
-- **FR-MAINT-3 (API Route Cron):** Menyediakan route handler Next.js `/api/cron/keep-alive` yang dilindungi header Bearer `CRON_SECRET` untuk integrasi Vercel Cron atau pemanggil eksternal.
-
----
-
-## 5. Spesifikasi Teknis & Kriptografi
-
-```text
-+-------------------------------------------------------------------------+
-|                          ARSITEKTUR ENKRIPSI                            |
-+-------------------------------------------------------------------------+
-
- [User Master Password] + [vaultSalt (16 bytes)]
-            │
-            ▼  PBKDF2-SHA256 (600.000 iterasi)
-      [masterKey] (AES-GCM 256-bit, Non-extractable)
-            │
-            ├─────────────── wrapKey (AES-GCM + IV 12 bytes) ─────────────┐
-            │                                                             │
-            ▼                                                             ▼
-     [vaultKey (Acak 256-bit)]                              [encryptedVaultKey + IV]
-            │                                                (Disimpan di DB User)
-            │
-            ▼  AES-GCM Enkripsi (IV acak 12 bytes per item)
-   [Payload Akun / Catatan] ─────────► [ciphertext + iv]
-                                        (Disimpan di DB VaultItem)
-```
-
-### 5.1. Parameter Kriptografi
-
-| Komponen                       | Spesifikasi                                 | Keterangan                                               |
-| :----------------------------- | :------------------------------------------ | :------------------------------------------------------- |
-| **API Provider**               | W3C Web Crypto API (`window.crypto.subtle`) | Standard built-in browser engine                         |
-| **Key Derivation**             | `PBKDF2`                                    | Hash: `SHA-256`, Salt: 16 bytes random Base64            |
-| **PBKDF2 Iterasi**             | `600.000`                                   | Sesuai rekomendasi OWASP Password Storage Guidelines     |
-| **Master Key Cipher**          | `AES-GCM` 256-bit                           | `extractable: false`, Usages: `['wrapKey', 'unwrapKey']` |
-| **Vault Key Cipher**           | `AES-GCM` 256-bit                           | Usages: `['encrypt', 'decrypt']`                         |
-| **Initialization Vector (IV)** | 12 bytes (96 bits) acak kriptografis        | Dibuat baru secara unik setiap kali enkripsi/wrapping    |
-| **Format Serialisasi**         | Base64 Encoding                             | Digunakan untuk transmisi network dan penyimpanan DB     |
-
----
-
-## 6. Arsitektur Sistem & Alur Data
-
-### 6.1. Tech Stack
-
-- **Framework:** Next.js 16 (App Router, Server Components & Server Actions)
-- **UI & Styling:** React 19, Tailwind CSS v4, shadcn/ui, Radix UI Primitives, Lucide Icons
-- **State Management:** React Context API (`VaultKeyProvider`) + In-Memory State
-- **Form & Validation:** TanStack Form + Zod v4
-- **Autentikasi:** Better Auth dengan Prisma Adapter
-- **Database & ORM:** Supabase (PostgreSQL) + Prisma ORM (`@prisma/adapter-pg`)
-- **Email Service:** Resend API
-- **Testing Suite:** Vitest
-- **Otomasi & CI/CD:** GitHub Actions (Node.js 24 Runner)
-
-### 6.2. Alur Pembacaan Data (Read Flow)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Pengguna (Browser)
-    participant Page as Next.js Server Component
-    participant DB as Database (PostgreSQL)
-    participant Crypto as Web Crypto API (Client)
-
-    User->>Page: Buka halaman /vault
-    Page->>DB: Query prisma.vaultItem.findMany({ where: { userId } })
-    DB-->>Page: Mengembalikan daftar item (title, url, ciphertext, iv)
-    Page-->>User: Render halaman dengan data terenkripsi
-
-    alt Vault Terkunci
-        User->>User: Menampilkan modal UnlockVault
-        User->>Crypto: Input Master Password -> deriveMasterKey() -> unwrapVaultKey()
-        Crypto-->>User: vaultKey tersimpan di Memory Context
+flowchart TD
+    subgraph Client["Client (Browser Web Crypto API)"]
+        MP["Master Password"]
+        Salt["vaultSalt (16 bytes)"]
+        PBKDF2["PBKDF2-SHA256 (600,000 iters)"]
+        MK["masterKey (AES-256-GCM, Non-extractable)"]
+        VK["vaultKey (256-bit random)"]
+        ItemJSON["Credential / Note JSON Payload"]
+        AESEngine["AES-256-GCM (12-byte IV)"]
     end
 
-    loop Untuk Setiap Item Vault
-        User->>Crypto: decryptData({ ciphertext, iv }, vaultKey)
-        Crypto-->>User: Objek Plaintext (Username, Password, Notes)
+    subgraph Database["Database (PostgreSQL)"]
+        UserTable[("User: vaultSalt, encryptedVaultKey, IV")]
+        VaultTable[("VaultItem: ciphertext, iv, metadata")]
     end
 
-    User->>User: Menampilkan data brankas lengkap di antarmuka
+    MP & Salt --> PBKDF2 --> MK
+    MK -- "Wrap / Unwrap (AES-GCM)" --> VK
+    VK & ItemJSON <--> AESEngine
+    AESEngine <-->|"ciphertext + iv"| VaultTable
+    MK <-->|"encryptedVaultKey + iv"| UserTable
 ```
+
+### Cryptographic Parameters
+
+| Component          | Specification                                   | Standard / Reference               |
+| :----------------- | :---------------------------------------------- | :--------------------------------- |
+| **API Provider**   | W3C Web Crypto API (`window.crypto.subtle`)     | Standard Browser Engine            |
+| **Key Derivation** | PBKDF2 with HMAC-SHA256                         | OWASP Password Storage Guidelines  |
+| **Iterations**     | 600,000 rounds                                  | OWASP Recommended Minimum          |
+| **Master Key**     | AES-GCM 256-bit (`extractable: false`)          | Key-wrapping key                   |
+| **Vault Key**      | AES-GCM 256-bit random                          | Payload encryption key             |
+| **IV Generation**  | 12 bytes (96 bits) via `crypto.getRandomValues` | Unique per encryption              |
+| **Payload Format** | Base64-encoded strings                          | Network and database serialization |
 
 ---
 
-## 7. Skema Database (Data Modeling)
+## 4. Functional Requirements
+
+### 4.1. Authentication (Better Auth)
+
+- **FR-AUTH-1:** Account registration with Name, Email, Username, and Password.
+- **FR-AUTH-2:** Automatic generation of a 16-byte cryptographically random `vaultSalt` on user creation.
+- **FR-AUTH-3:** Mandatory email verification via Resend before vault activation.
+- **FR-AUTH-4:** Dual identifier login support (Email or Username).
+- **FR-AUTH-5:** Account password reset (independent of Master Password).
+
+### 4.2. Master Password & Vault Lifecycle
+
+- **FR-VAULT-1 (Setup):** Prompt user to establish a Master Password post-verification, initializing wrapped `vaultKey`.
+- **FR-VAULT-2 (Unlock):** On application visit, user enters Master Password to unwrap `vaultKey` into active memory.
+- **FR-VAULT-3 (Lock):** Manual lock button or automatic flush upon page reload.
+- **FR-VAULT-4 (Rewrap):** Changing Master Password unwraps existing `vaultKey` and re-wraps it with the new key without touching vault items.
+- **FR-VAULT-5 (Emergency Reset):** If Master Password is lost, user can purge all vault items and reset Master Password state.
+
+### 4.3. Vault Item Management
+
+- **FR-ITEM-1 (Item Types):**
+  - `ACCOUNT`: Title, URL, Identifiers (Email, **Username / ID**, Phone), optional Credentials (Password, PIN), and Notes.
+  - `NOTE`: Title, URL, Content (up to 10,000 characters).
+- **FR-ITEM-2 (Payload Isolation):**
+  - _Plaintext Metadata:_ `title`, `url`, `type`, `pinned`, timestamps.
+  - _Encrypted Payload:_ All credentials, identifiers, notes, and history combined into JSON ciphertext.
+- **FR-ITEM-3 (Credential History Management):**
+  - Automatically records replaced passwords/PINs (capped at 10 entries).
+  - Dynamic opt-out checkbox (`Save replaced credentials to history`) to avoid storing accidental typos.
+  - In-form history deletion: individual entry deletion and `Clear all` button.
+- **FR-ITEM-4 (Operations):** Create, update, delete, search (client-side query), and category filtering (`ALL`, `ACCOUNT`, `NOTE`).
+- **FR-ITEM-5 (Clipboard):** Secure copy to clipboard with toast confirmation.
+
+### 4.4. Password Generator
+
+- **FR-GEN-1:** Secure random generation using `window.crypto.getRandomValues`.
+- **FR-GEN-2:** Customizable length (8–64 chars) and character sets (uppercase, lowercase, numbers, symbols).
+- **FR-GEN-3:** Option to exclude ambiguous characters (`1`, `l`, `I`, `0`, `O`).
+- **FR-GEN-4:** Quick insertion into registration, setup, and vault forms.
+
+### 4.5. Database Maintenance
+
+- **FR-MAINT-1:** Automated GitHub Actions cron every 3 days (`0 3 */3 * *`) to keep Supabase free-tier database active.
+- **FR-MAINT-2:** Protected API route `/api/cron/keep-alive` with `CRON_SECRET` authentication.
+
+---
+
+## 5. Data Model (Prisma Schema)
 
 ```mermaid
 erDiagram
-    user ||--o{ vault : "memiliki banyak"
-    user ||--o{ session : "memiliki banyak"
-    user ||--o{ account : "memiliki banyak"
+    User ||--o{ VaultItem : owns
+    User ||--o{ Session : maintains
+    User ||--o{ Account : links
 
-    user {
+    User {
         string id PK
         string name
         string email UK
         boolean emailVerified
         string username UK
-        string displayUsername
-        string vaultSalt "16-byte random salt Base64"
-        string encryptedVaultKey "Wrapped vaultKey Base64"
-        string encryptedVaultKeyIv "IV for wrapped key Base64"
+        string vaultSalt "Random 16-byte salt (Base64)"
+        string encryptedVaultKey "Wrapped vaultKey (Base64)"
+        string encryptedVaultKeyIv "IV for wrapped key (Base64)"
         datetime createdAt
         datetime updatedAt
     }
 
-    vault {
+    VaultItem {
         string id PK
         string userId FK
         enum type "ACCOUNT | NOTE"
-        string title "Judul Plaintext"
-        string url "URL Plaintext opsional"
-        boolean pinned "Status Pin"
-        string ciphertext "Data Sensitif Terenkripsi Base64"
-        string iv "IV 12-byte per item Base64"
-        int encVersion "Versi Enkripsi default 1"
+        string title "Plaintext metadata"
+        string url "Plaintext optional"
+        boolean pinned
+        string ciphertext "AES-256-GCM ciphertext"
+        string iv "12-byte IV"
+        int encVersion "Default 1"
         datetime createdAt
         datetime updatedAt
-    }
-
-    session {
-        string id PK
-        string userId FK
-        string token UK
-        datetime expiresAt
-    }
-
-    account {
-        string id PK
-        string userId FK
-        string providerId
-        string password
-    }
-
-    verification {
-        string id PK
-        string identifier
-        string value
-        datetime expiresAt
     }
 ```
 
 ---
 
-## 8. Spesifikasi Server Actions & Kontrak Data
+## 6. Server Actions Contract
 
-Semua mutasi data server diatur melalui Server Actions dengan kontrak tipe **Discriminated Union** terstandarisasi:
+All mutations adhere to a strict discriminated union response structure:
 
 ```typescript
 export type ActionResponse<T = void> =
@@ -308,86 +177,40 @@ export type ActionResponse<T = void> =
   | { success: false; error: string; data?: never };
 ```
 
-### 8.1. Ringkasan Endpoint Server Action
-
-| Action Function            | File Sumber                         | Input Payload                            | Output Sukses                    |
-| :------------------------- | :---------------------------------- | :--------------------------------------- | :------------------------------- |
-| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
-| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | `EncryptedVaultItemInput`                | `ActionResponse<{ id: string }>` |
-| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | `itemId, EncryptedVaultItemInput`        | `ActionResponse`                 |
-| `deleteVaultItem`          | `src/actions/vault.action.ts`       | `id`                                     | `ActionResponse`                 |
-| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | `id, pinned`                             | `ActionResponse`                 |
-| `updateMasterPassword`     | `src/actions/settings.action.ts`    | `encryptedVaultKey, encryptedVaultKeyIv` | `ActionResponse`                 |
-| `resetMasterPassword`      | `src/actions/settings.action.ts`    | `-`                                      | `ActionResponse`                 |
-| `deleteUserAccount`        | `src/actions/settings.action.ts`    | `-`                                      | `ActionResponse`                 |
+| Action                     | Path                                | Purpose                                |
+| :------------------------- | :---------------------------------- | :------------------------------------- |
+| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | Stores initial wrapped vault key       |
+| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | Persists new encrypted item            |
+| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | Updates existing encrypted item        |
+| `deleteVaultItem`          | `src/actions/vault.action.ts`       | Deletes vault item by ID               |
+| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | Toggles pinned status                  |
+| `updateMasterPassword`     | `src/actions/settings.action.ts`    | Persists re-wrapped vault key          |
+| `resetMasterPassword`      | `src/actions/settings.action.ts`    | Wipes vault items and resets key state |
 
 ---
 
-## 9. Kebutuhan Non-Fungsional (Non-Functional Requirements)
+## 7. Quality Assurance & Testing
 
-### 9.1. Keamanan & Privasi
+Automated testing is powered by **Vitest**:
 
-- **Zero-Trust Server:** Server tidak memiliki akses ke plaintext data pengguna.
-- **Strict Session Isolation:** Semua query database Server Actions memvalidasi `session.user.id` secara ketat untuk mencegah serangan _IDOR (Insecure Direct Object Reference)_.
-- **Input Sanitization:** Validasi berlapis via Zod di sisi client (sebelum enkripsi) dan sisi server (sebelum query DB).
-
-### 9.2. Performa
-
-- **Optimistic UI Updates:** Toggle pin item dieksekusi secara instan di UI sebelum konfirmasi server selesai.
-- **Client-Side Decryption Speed:** Dekripsi paralel seluruh item brankas via `Promise.all` memproses puluhan item dalam hitungan milidetik.
-- **PBKDF2 Overhead:** Derivasi kunci berjalan di Web Worker / SubtleCrypto bawaan browser agar tidak memblokir render UI utama.
-
-### 9.3. Keandalan & Integritas
-
-- **Atomic Operations:** Operasi reset master password menggunakan Prisma `$transaction` untuk memastikan penghapusan item vault dan reset kunci user bersifat atomik.
-- **No-Memory-Leak Keys:** Kunci kriptografi tidak pernah disimpan di `localStorage` atau `sessionStorage` untuk mencegah serangan XSS mengekstrak brankas.
-
----
-
-## 10. Strategi Pengujian & QA
-
-Centinela mengimplementasikan automated test suite menggunakan **Vitest**:
-
-1. **Unit Test Kriptografi (`src/test/vault-crypto.test.ts`):**
-   - Derivasi PBKDF2 Master Key.
-   - Enkripsi dan dekripsi data Akun dan Catatan.
-   - Pembungkusan ulang kunci (_rewrapping_) saat pergantian master password.
-   - Verifikasi kegagalan dekripsi saat ciphertext dimanipulasi (_tamper resistance_).
-2. **Unit Test Validasi Schema (`src/test/vault-schema.test.ts`):**
-   - Integritas aturan form akun, format email, nomor telepon, dan PIN.
-   - Batasan panjang karakter catatan dan Master Password.
-3. **Unit Test Server Actions (`src/test/vault-actions.test.ts`):**
-   - Mocking sesi autentikasi dan operasi Prisma ORM.
-   - Verifikasi otorisasi, penolakan payload tidak valid, dan respons `ActionResponse`.
+1. **Cryptographic Engine (`src/test/vault-crypto.test.ts`):**
+   - PBKDF2 key derivation consistency.
+   - Symmetric encryption/decryption validation.
+   - Master Password rewrapping integrity.
+   - Tamper detection and authentication tag verification.
+2. **Schema & Validation (`src/test/vault-schema.test.ts`):**
+   - Account identifier requirements (at least one of: email, username/ID, phone).
+   - Optional credential rules.
+   - Note character boundaries (1 to 10,000 characters).
+3. **Server Actions (`src/test/vault-actions.test.ts`):**
+   - Session authorization checks.
+   - Input payload validation.
+   - Transactional integrity.
 
 ---
 
-## 11. Roadmap & Rencana Pengembangan Mendatang
+## 8. Product Roadmap
 
-```mermaid
-gantt
-    title Roadmap Pengembangan Centinela
-    dateFormat  YYYY-Q#
-    section Fase 1 (Selesai)
-    Core Zero-Knowledge Engine       :done, 2026-Q1, 2026-Q2
-    Better Auth & Settings           :done, 2026-Q2, 2026-Q3
-    Vault Management & Test Suite    :done, 2026-Q3, 2026-Q3
-    Password Generator Built-in      :done, 2026-Q3, 2026-Q3
-    Automated Supabase Keep-Alive    :done, 2026-Q3, 2026-Q3
-    section Fase 2 (Q4 2026)
-    Two-Factor Authentication (2FA)  :active, 2026-Q4, 2026-Q4
-    WebAuthn / Passkey Unlock        :2026-Q4, 2027-Q1
-    section Fase 3 (2027)
-    Browser Extension (Chrome/Edge)  :2027-Q1, 2027-Q2
-    Secure File & Attachment Vault   :2027-Q2, 2027-Q3
-    Argon2id Key Derivation Upgrade  :2027-Q3, 2027-Q4
-```
-
-- **Two-Factor Authentication (TOTP / Authenticator App):** Menambah lapisan keamanan kedua saat login akun.
-- **Passkey / Biometric Unlock:** Memanfaatkan WebAuthn untuk membuka vault lokal via Fingerprint / Face ID tanpa harus mengetik Master Password berulang kali.
-- **Browser Extension:** Ekstensi browser untuk fitur _Auto-fill_ dan _Auto-save_ kredensial langsung pada form website.
-- **Export & Import Vault:** Fitur backup terenkripsi dan impor dari pengelola password lain (Bitwarden, 1Password, Chrome CSV).
-
----
-
-_Dokumen ini merupakan spesifikasi resmi pengembangan produk Centinela. Setiap perubahan arsitektur atau kriptografi harus ditinjau dan diperbarui dalam dokumen ini._
+- **Phase 1 (Completed):** Zero-Knowledge Core, Envelope Encryption, Vault CRUD, Password Generator, Credential History Management, Supabase Keep-Alive.
+- **Phase 2 (Upcoming):** Two-Factor Authentication (TOTP 2FA), Biometric / WebAuthn unlock.
+- **Phase 3 (Future):** Browser Extension (autofill/autosave), Encrypted file attachments, Vault import/export (Bitwarden, 1Password CSV).

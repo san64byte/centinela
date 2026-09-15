@@ -41,12 +41,12 @@ export default function DeleteAccount() {
       });
 
       if (error) {
-        toast(error.message ?? 'Failed to send the confirmation email.');
+        toast.error(error.message ?? 'Failed to send the confirmation email.');
         return;
       }
 
       lock();
-      toast('Check your email for the account deletion confirmation.');
+      toast.info('Check your email for the account deletion confirmation.');
       setSent(true);
     });
   }
