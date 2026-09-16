@@ -7,9 +7,9 @@ import { useAppForm } from '@/lib/form';
 import { withPasswordSchema } from '@/schemas/auth-schema';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export default function ResetPasswordForm({ token }: { token: string }) {
-  const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -21,6 +21,7 @@ export default function ResetPasswordForm({ token }: { token: string }) {
       onChange: withPasswordSchema,
     },
     onSubmit: async ({ value }) => {
+      setError(null);
       await authClient.resetPassword(
         {
           newPassword: value.password,
@@ -28,9 +29,8 @@ export default function ResetPasswordForm({ token }: { token: string }) {
         },
         {
           onSuccess: () => {
-            setSuccess('Password has been reset. You can now sign in.');
-            setTimeout(() => router.push('/login'), 3000);
-            form.reset();
+            toast.success('Password reset successfully. Please sign in with your new password.');
+            router.replace('/login');
           },
           onError: (ctx) => {
             const message =
@@ -61,14 +61,13 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           {([isSubmitting, canSubmit]) => (
             <Field>
               <LoadingButton loading={isSubmitting} disabled={!canSubmit} type="submit">
-                reset password
+                Reset password
               </LoadingButton>
             </Field>
           )}
         </form.Subscribe>
 
         {error && <FieldError>{error}</FieldError>}
-        {success && <p className="text-sm text-green-600">{success}</p>}
       </FieldGroup>
     </form>
   );

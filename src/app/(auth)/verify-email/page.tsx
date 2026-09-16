@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import * as z from 'zod';
+import VerifyEmailForm from '@/components/auth/verify-email-form';
 
 export const metadata: Metadata = {
   title: 'Verify Email',
@@ -18,14 +20,22 @@ export default async function VerifyEmailPage({
   searchParams: Promise<{ email?: string }>;
 }) {
   const { email } = await searchParams;
-  if (!email) redirect('/');
+  if (!email || !z.email().safeParse(email).success) {
+    redirect('/login');
+  }
 
   const user = await prisma.user.findUnique({
     where: { email },
+    select: { emailVerified: true },
   });
 
-  if (!user) redirect('/');
-  if (user.emailVerified) redirect('/vault');
+  if (!user) {
+    redirect('/login');
+  }
+
+  if (user.emailVerified) {
+    redirect('/login?verified=true');
+  }
 
   return (
     <div className="w-full max-w-md">
@@ -43,8 +53,9 @@ export default async function VerifyEmailPage({
             folder) to verify your account before signing in.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center gap-4">
-          <Link href="/login" className={cn(buttonVariants({ variant: 'default' }), 'w-full')}>
+        <CardContent className="flex flex-col items-center gap-3">
+          <VerifyEmailForm email={email} />
+          <Link href="/login" className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}>
             Back to Login
           </Link>
         </CardContent>

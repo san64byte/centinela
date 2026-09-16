@@ -13,12 +13,17 @@ import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import * as z from 'zod';
+import { CircleCheck } from 'lucide-react';
 
 function isEmail(value: string): boolean {
   return z.email().safeParse(value).success;
 }
 
-export default function LoginForm({ className, ...props }: React.ComponentProps<'form'>) {
+interface LoginFormProps extends React.ComponentProps<'form'> {
+  isVerified?: boolean;
+}
+
+export default function LoginForm({ className, isVerified, ...props }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -73,6 +78,12 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       {...props}
     >
       <FieldGroup>
+        {isVerified && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-600 dark:text-emerald-400">
+            <CircleCheck className="size-4 shrink-0" />
+            <span>Email verified successfully! You can now log in.</span>
+          </div>
+        )}
         {error && <FieldError>{error}</FieldError>}
 
         <form.AppField name="identifier">

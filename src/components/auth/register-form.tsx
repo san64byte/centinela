@@ -47,6 +47,14 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
         {
           onSuccess: () => {
             toast.success('Account registered successfully');
+            try {
+              localStorage.setItem(
+                `verify_email_cooldown_${value.email.toLowerCase()}`,
+                Date.now().toString(),
+              );
+            } catch {
+              // Ignore storage errors if private browsing restricts localStorage
+            }
             router.push(`/verify-email?email=${encodeURIComponent(value.email)}`);
           },
           onError: (ctx) => {
