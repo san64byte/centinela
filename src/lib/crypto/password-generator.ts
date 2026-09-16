@@ -5,10 +5,6 @@ export interface PasswordGeneratorOptions {
   symbols?: boolean;
 }
 
-/**
- * Menghasilkan kata sandi acak yang aman secara kriptografi
- * menggunakan Web Crypto API (crypto.getRandomValues).
- */
 export function generateSecurePassword(
   length = 16,
   options: PasswordGeneratorOptions = {
@@ -57,7 +53,6 @@ export function generateSecurePassword(
     result.push(charSet[randomBytes[i] % charSet.length]);
   }
 
-  // Shuffle securely menggunakan Fisher-Yates
   for (let i = result.length - 1; i > 0; i--) {
     const j = globalThis.crypto.getRandomValues(new Uint8Array(1))[0] % (i + 1);
     [result[i], result[j]] = [result[j], result[i]];

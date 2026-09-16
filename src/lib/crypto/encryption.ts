@@ -5,7 +5,6 @@ export interface EncryptedPayload {
   iv: string;
 }
 
-// Mengenkripsi data (string atau object apa pun) menjadi ciphertext + IV
 export async function encryptData<T>(data: T, vaultKey: CryptoKey): Promise<EncryptedPayload> {
   const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
 
@@ -24,7 +23,6 @@ export async function encryptData<T>(data: T, vaultKey: CryptoKey): Promise<Encr
   };
 }
 
-// Mendekripsi ciphertext + IV kembali menjadi data asli (string atau object)
 export async function decryptData<T = string>(
   payload: EncryptedPayload,
   vaultKey: CryptoKey,

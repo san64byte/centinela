@@ -61,37 +61,6 @@ flowchart TD
 
 ---
 
-## 📁 Project Structure
-
-```text
-centinela/
-├── .github/workflows/keep-alive.yml   # Supabase anti-pause scheduled workflow
-├── prisma/
-│   ├── schema.prisma                  # Database schema (User, VaultItem, Session)
-│   └── migrations/                    # Prisma SQL migrations
-├── scripts/keep-alive.mjs             # Standalone PostgreSQL keep-alive ping
-├── src/
-│   ├── actions/                       # Next.js Server Actions (vault, settings)
-│   ├── app/                           # App Router (pages & auth/cron API routes)
-│   ├── components/
-│   │   ├── auth/                      # Login, register, forgot-password forms
-│   │   ├── settings/                  # Profile, email, master password forms
-│   │   ├── ui/                        # UI primitives (button, dialog, input, etc.)
-│   │   ├── vault/                     # Vault dashboard, form, detail, card
-│   │   └── password-generator.tsx     # Password generator component
-│   ├── hooks/                         # React hooks (useVaultKey, useSignout)
-│   ├── lib/
-│   │   ├── crypto/                    # Web Crypto implementation (keys, encryption)
-│   │   ├── auth.ts                    # Better Auth server configuration
-│   │   └── prisma.ts                  # Prisma client initialization
-│   ├── schemas/                       # Zod validation schemas
-│   ├── test/                          # Vitest test suite (crypto, schema, actions)
-│   └── types/                         # TypeScript interfaces and types
-└── vercel.json                        # Deployment configuration
-```
-
----
-
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
