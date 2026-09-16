@@ -1,6 +1,6 @@
 # 📄 Dokumen Kebutuhan Produk (PRD): Centinela
 
-**Versi Dokumen:** 1.3.0  
+**Versi Dokumen:** 1.4.0  
 **Proyek:** Centinela  
 **Klasifikasi:** Keamanan / Pengelola Kata Sandi & Rahasia (_Password & Secrets Manager_)  
 **Status:** Produksi / Pengembangan Aktif  
@@ -88,7 +88,7 @@ flowchart TD
 
 #### A. Alur Pendaftaran Akun (Sign-Up)
 
-1. **Pengisian Formulir:** Pengguna memasukkan Nama Lengkap, Email, Username (dengan slugifikasi otomatis dan verifikasi ketersediaan secara berkala/debounced), serta Kata Sandi Akun.
+1. **Pengisian Formulir:** Pengguna memasukkan Nama Lengkap, Email, Username (dengan slugifikasi otomatis dan verifikasi ketersediaan secara berkala/debounced), serta Kata Sandi Akun (dilengkapi generator kata sandi bawaan).
 2. **Hook Basis Data (`beforeCreate`):** Server otomatis men-generate **`vaultSalt` unik 16 bytes** menggunakan `crypto.getRandomValues(new Uint8Array(16))`, diubah ke Base64 dan disimpan di tabel pengguna.
 3. **Pengiriman Email Verifikasi:** Better Auth membuat token JWT stateless bertanda tangan digital (masa berlaku 1 jam) dan mengirimkannya via Resend SMTP.
 4. **Pencegahan Spam & Rate Limiting Client:** Timestamp pengiriman (`Date.now()`) dicatat ke `localStorage` dengan kunci `verify_email_cooldown_${email.toLowerCase()}`. Pengguna diarahkan ke `/verify-email?email=...`.
@@ -126,7 +126,7 @@ flowchart TD
 
 _Berjalan saat pertama kali masuk ketika kolom `encryptedVaultKey` masih bernilai null._
 
-1. Pengguna menentukan Master Password brankas yang kuat.
+1. Pengguna menentukan Master Password brankas yang kuat, dipandu oleh indikator kekuatan kata sandi visual 5 tingkat (Weak, Fair, Good, Strong, Very Strong) dan generator kata sandi terintegrasi.
 2. **Proses Kriptografi di Peramban (Web Crypto API):**
    - **Derivasi Master Key:** `masterPassword` + `vaultSalt` diolah melalui `PBKDF2-HMAC-SHA256` (600.000 iterasi) menghasilkan `masterKey` (AES-256-GCM, `extractable: false`).
    - **Generate Vault Key:** Browser membuat kunci acak 256-bit AES-GCM baru (`vaultKey`).
@@ -149,19 +149,20 @@ _Berjalan saat masuk kembali, sesi baru, atau setelah refresh halaman di mana ku
 
 _Berjalan di menu pengaturan (`/settings`) saat pengguna mengganti Master Password._
 
-1. Pengguna memasukkan Master Password lama dan Master Password baru.
+1. Pengguna memasukkan Master Password lama dan Master Password baru (disertai meteran kekuatan).
 2. **Kelebihan Tanpa Enkripsi Ulang Data:**
    - Kunci brankas aktif (`vaultKey`) dipertahankan.
    - `newMasterKey` diturunkan dari Master Password baru + `vaultSalt`.
    - Fungsi `rewrapVaultKey(vaultKey, newMasterKey)` membungkus ulang kunci brankas dengan kunci master baru.
    - Kolom `encryptedVaultKey` dan IV baru disimpan ke basis data.
+   - **Pencabutan Sesi Multi-Perangkat:** Dalam satu transaksi atomik `prisma.$transaction`, server memperbarui kunci dan mencabut seluruh sesi aktif lainnya di perangkat lain (`id: { not: currentSessionId }`).
    - **Hasil:** Seluruh data akun dan catatan di dalam brankas tetap utuh dan valid tanpa perlu disentuh satu per satu.
 
 #### D. Reset Master Password Darurat (Lupa Master Password)
 
 1. Karena menganut prinsip Zero-Knowledge, pemulihan data mustahil dilakukan secara matematis jika Master Password hilang.
 2. Pengguna harus mencentang persetujuan tindakan permanen tak dapat dibatalkan (_Irreversible Action_).
-3. Server Action `resetMasterPassword` menghapus seluruh isi brankas (`prisma.vaultItem.deleteMany`), mengosongkan nilai kunci brankas, dan mengarahkan pengguna untuk membuat brankas baru dari awal di `/setup-vault`.
+3. Server Action `resetMasterPassword` secara atomik menghapus seluruh isi brankas (`prisma.vaultItem.deleteMany`), mengosongkan nilai kunci brankas, mencabut seluruh sesi lain di `prisma.$transaction`, dan mengarahkan pengguna untuk membuat brankas baru di `/setup-vault`.
 
 ---
 
@@ -173,7 +174,7 @@ _Berjalan di menu pengaturan (`/settings`) saat pengguna mengganti Master Passwo
 Input Formulir Pengguna (Akun / Catatan)
    │
    ▼ [Langkah 1: Penyusunan Payload]
-Objek Data { email, username, password, pin, notes, credentialHistory }
+Objek Data { email, username, phone, password, pin, notes, credentialHistory }
    │
    ▼ [Langkah 2: Serialisasi JSON]
 String JSON
@@ -243,27 +244,30 @@ Disimpan ke React State (`decryptedItems`) & Ditampilkan ke Kartu
 
 1. **Pembaruan Optimistik (Optimistic Updates):** Fitur penyematan item (_pin/unpin_) menggunakan React `useOptimistic` sehingga kartu langsung berpindah seketika di layar tanpa menunggu respons jaringan server.
 2. **Pencarian & Pemfilteran Sisi Klien:** Pencarian data dilakukan murni pada data memori yang telah didekripsi (berdasarkan judul, email, username, atau isi catatan) sehingga kata kunci pencarian tidak pernah bocor ke log server backend.
-3. **Pengosongan Memori Saat Kunci/Keluar:** Menekan tombol _Lock_ atau _Sign Out_ langsung mengubah `vaultKey = null`, menghapus seluruh data rahasia seketika dari pohon komponen React.
+3. **Deteksi Perubahan Formulir Akurat:** Menggunakan perbandingan mendalam (`lodash.isequal`) yang dipadukan dengan status modifikasi riwayat (`isHistoryChanged`), memastikan tombol Simpan hanya aktif saat ada perubahan nyata.
+4. **Pengosongan Memori Saat Kunci/Keluar:** Menekan tombol _Lock_ atau _Sign Out_ langsung mengubah `vaultKey = null`, menghapus seluruh data rahasia seketika dari pohon komponen React.
 
 ---
 
 ### 4.5. Alur Pengaturan Akun & Keamanan Lanjutan
 
-1. **Penggantian Kata Sandi Akun:** Memperbarui kredensial masuk melalui Better Auth `changePassword` tanpa memengaruhi kunci brankas enkripsi.
-2. **Penggantian Email Akun:** Membutuhkan verifikasi pada email baru, otomatis mengirimkan peringatan keamanan ke alamat email lama, dan mencabut semua sesi aktif di perangkat lain.
-3. **Penghapusan Akun Permanen:** Melakukan penghapusan berantai (_cascade_) pada data brankas, data user, dan sesi, menetapkan kuki penanda `goodbye_token`, lalu mengarahkan pengguna ke halaman `/goodbye`.
+1. **Pengelolaan Informasi Dasar (`BasicInformationForm`):** Pengguna dapat memperbarui Nama Lengkap dan Username dengan validasi ketersediaan waktu nyata (1–12 karakter, regex `/^[a-z0-9_]+$/`) dan pembaruan sesi instan.
+2. **Penggantian Kata Sandi Akun:** Memperbarui kredensial masuk melalui Better Auth `changePassword` tanpa memengaruhi kunci brankas enkripsi.
+3. **Penggantian Email Akun:** Membutuhkan verifikasi pada email baru, otomatis mengirimkan peringatan keamanan ke alamat email lama, dan mencabut semua sesi aktif di perangkat lain.
+4. **Penghapusan Akun & Keamanan Halaman Goodbye:** Melakukan penghapusan berantai (_cascade_) pada data brankas, data user, dan sesi, menetapkan kuki penanda HTTP-only `goodbye_token` (berlaku 30 detik), lalu mengarahkan pengguna ke halaman terproteksi `/goodbye`.
 
 ---
 
 ## 5. Kebutuhan Fungsional
 
-### 5.1. Autentikasi (Better Auth)
+### 5.1. Autentikasi & Profil Pengguna (Better Auth)
 
 - **FR-AUTH-1:** Pendaftaran akun dengan Nama Lengkap, Email, Username, dan Kata Sandi.
 - **FR-AUTH-2:** Pembuatan otomatis `vaultSalt` acak 16-byte kriptografis saat akun dibuat.
-- **FR-AUTH-3:** Verifikasi email wajib via Resend sebelum aktivasi brankas.
+- **FR-AUTH-3:** Verifikasi email wajib via Resend sebelum aktivasi brankas dengan cooldown timer 60 detik anti-refresh.
 - **FR-AUTH-4:** Dukungan login pengenal ganda (Email atau Username).
-- **FR-AUTH-5:** Reset kata sandi akun secara mandiri (terpisah dari Master Password brankas).
+- **FR-AUTH-5:** Reset kata sandi akun secara mandiri dengan pencabutan sesi dan pengalihan login instan.
+- **FR-AUTH-6:** Pengelolaan profil pengguna yang memungkinkan perubahan Nama Lengkap dan Username disertai validasi keunikan waktu nyata.
 
 ### 5.2. Siklus Master Password & Brankas
 
@@ -272,11 +276,13 @@ Disimpan ke React State (`decryptedItems`) & Ditampilkan ke Kartu
 - **FR-VAULT-3 (Lock):** Menyediakan tombol penguncian manual dan pembersihan otomatis saat reload halaman.
 - **FR-VAULT-4 (Rewrap):** Mengizinkan penggantian Master Password dengan membungkus ulang kunci tanpa mengenkripsi ulang data brankas.
 - **FR-VAULT-5 (Reset Darurat):** Menyediakan opsi pembersihan total data brankas jika Master Password terlupakan.
+- **FR-VAULT-6 (Meteran Kekuatan):** Indikator visual kekuatan kata sandi 5 tingkat waktu nyata (Weak hingga Very Strong) pada setup dan rotasi Master Password.
+- **FR-VAULT-7 (Pencabutan Sesi Atomik):** Rotasi dan reset Master Password mencabut seluruh sesi aktif di perangkat lain secara atomik dalam satu transaksi database.
 
 ### 5.3. Pengelolaan Item Brankas
 
 - **FR-ITEM-1 (Tipe Item):**
-  - `ACCOUNT`: Judul, URL, Pengenal (Email, **Username / ID**, Telepon), Kredensial Opsional (Kata Sandi, PIN), dan Catatan Tambahan.
+  - `ACCOUNT`: Judul, URL, Pengenal (Email, **Username / ID**, Telepon), Kredensial Opsional (Kata Sandi, PIN), dan Catatan Tambahan. Setidaknya satu pengenal wajib diisi; kata sandi/PIN bersifat opsional.
   - `NOTE`: Judul, URL, dan Konten Catatan Rahasia (hingga 10.000 karakter).
 - **FR-ITEM-2 (Isolasi Payload):**
   - _Metadata Teks Terbuka:_ `title`, `url`, `type`, `pinned`, timestamp.
@@ -285,6 +291,7 @@ Disimpan ke React State (`decryptedItems`) & Ditampilkan ke Kartu
   - Otomatis mencatat riwayat kata sandi/PIN lama yang diganti (dibatasi 10 entri).
   - Opsi centang dinamis (`Save replaced credentials to history`) untuk menghindari pencatatan kesalahan ketik (_typo_).
   - Penghapusan riwayat langsung di form: hapus per entri atau tombol `Clear all`.
+  - Fitur intip/sensor (reveal toggle) untuk nilai kredensial lampau.
 - **FR-ITEM-4 (Operasi Data):** Pembuatan, pembaruan, penghapusan, pencarian instan, dan penyaringan kategori (`ALL`, `ACCOUNT`, `NOTE`).
 - **FR-ITEM-5 (Papan Klip / Clipboard):** Tombol salin aman ke clipboard dengan notifikasi toast konfirmasi.
 
@@ -293,12 +300,18 @@ Disimpan ke React State (`decryptedItems`) & Ditampilkan ke Kartu
 - **FR-GEN-1:** Pembuatan kata sandi acak aman menggunakan `window.crypto.getRandomValues`.
 - **FR-GEN-2:** Panjang yang dapat disesuaikan (8–64 karakter) serta pemilihan set karakter (huruf besar, huruf kecil, angka, simbol).
 - **FR-GEN-3:** Opsi mengabaikan karakter ambigu (`1`, `l`, `I`, `0`, `O`).
-- **FR-GEN-4:** Tombol sisipkan instan (_apply_) pada formulir registrasi, setup brankas, dan item brankas.
+- **FR-GEN-4 (Integrasi Universal):** Pembuatan 1-klik dan modal generator tersedia langsung pada Formulir Registrasi, Setup Brankas, Formulir Item, dan Pengaturan.
 
 ### 5.5. Pemeliharaan Basis Data
 
 - **FR-MAINT-1:** Otomasi GitHub Actions cron setiap 3 hari sekali (`0 3 */3 * *`) untuk menjaga keaktifan database Supabase tier gratis.
 - **FR-MAINT-2:** Endpoint rute terproteksi `/api/cron/keep-alive` dengan autentikasi `CRON_SECRET`.
+
+### 5.6. Antarmuka Pengguna & Perlindungan Privasi
+
+- **FR-UI-1 (Ganti Tema):** Dukungan tema Sistem, Terang, dan Gelap melalui `next-themes` dengan penyimpanan preferensi instan.
+- **FR-UI-2 (Overlay Privasi Saat Logout):** Overlay layar penuh saat proses keluar (_sign out_) untuk mencegah kedipan visual data rahasia selama perpindahan rute.
+- **FR-UI-3 (Proteksi Akses Halaman Goodbye):** Akses menuju `/goodbye` mewajibkan kuki berumur pendek `goodbye_token`.
 
 ---
 
@@ -351,15 +364,15 @@ export type ActionResponse<T = void> =
   | { success: false; error: string; data?: never };
 ```
 
-| Nama Action                | Lokasi File                         | Fungsi & Deskripsi                                    |
-| :------------------------- | :---------------------------------- | :---------------------------------------------------- |
-| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | Menyimpan kunci brankas terbungkus perdana            |
-| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | Menyimpan item brankas terenkripsi baru               |
-| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | Memperbarui item brankas terenkripsi                  |
-| `deleteVaultItem`          | `src/actions/vault.action.ts`       | Menghapus item brankas berdasarkan ID                 |
-| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | Mengubah status pin/semat item brankas                |
-| `updateMasterPassword`     | `src/actions/settings.action.ts`    | Menyimpan kunci brankas hasil rewrap                  |
-| `resetMasterPassword`      | `src/actions/settings.action.ts`    | Menghapus semua item brankas dan mereset status kunci |
+| Nama Action                | Lokasi File                         | Fungsi & Deskripsi                                                    |
+| :------------------------- | :---------------------------------- | :-------------------------------------------------------------------- |
+| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | Menyimpan kunci brankas terbungkus perdana                            |
+| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | Menyimpan item brankas terenkripsi baru                               |
+| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | Memperbarui item brankas terenkripsi                                  |
+| `deleteVaultItem`          | `src/actions/vault.action.ts`       | Menghapus item brankas berdasarkan ID                                 |
+| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | Mengubah status pin/semat item brankas                                |
+| `updateMasterPassword`     | `src/actions/settings.action.ts`    | Menyimpan kunci brankas hasil rewrap & mencabut sesi lain (atomik)    |
+| `resetMasterPassword`      | `src/actions/settings.action.ts`    | Menghapus item brankas, mereset status kunci & mencabut sesi (atomik) |
 
 ---
 
@@ -385,6 +398,6 @@ Pengujian otomatis dijalankan menggunakan **Vitest**:
 
 ## 9. Rencana Pengembangan (Product Roadmap)
 
-- **Fase 1 (Selesai):** Core Zero-Knowledge, Envelope Encryption, Arsitektur Alur Komprehensif, CRUD Brankas, Generator Password, Riwayat Kredensial, Supabase Keep-Alive Cron.
+- **Fase 1 (Selesai):** Core Zero-Knowledge, Envelope Encryption, Arsitektur Alur Komprehensif, CRUD Brankas, Generator Password Universal, Riwayat Kredensial, Supabase Keep-Alive Cron, Pengaturan Profil, Dukungan Tema Gelap/Terang.
 - **Fase 2 (Mendatang):** Autentikasi Dua Faktor (TOTP 2FA), Pembukaan Brankas Biometrik / WebAuthn.
 - **Fase 3 (Masa Depan):** Ekstensi Browser (_autofill/autosave_), Lampiran file terenkripsi, Ekspor/Impor Brankas (format Bitwarden, 1Password CSV).

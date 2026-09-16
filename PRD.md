@@ -1,6 +1,6 @@
 # 📄 Product Requirement Document (PRD): Centinela
 
-**Document Version:** 1.3.0  
+**Document Version:** 1.4.0  
 **Project:** Centinela  
 **Classification:** Security / Password & Secrets Management  
 **Status:** In Production / Active Development  
@@ -17,7 +17,7 @@ Centinela is a web-based, zero-knowledge password and secrets manager designed t
 
 - **True Zero-Knowledge:** Even in the event of a total database leak or compromised server, user data cannot be decrypted without the user's Master Password.
 - **Envelope Encryption:** Decouples user-derived keys from the vault encryption key, enabling seamless Master Password changes without re-encrypting vault items.
-- **Flexible Identifiers:** Accommodates modern account formats (usernames, member numbers, account IDs) alongside traditional email/password pairs.
+- **Flexible Identifiers:** Accommodates modern account formats (usernames, member numbers, account IDs, phone numbers) alongside traditional email/password pairs.
 
 ---
 
@@ -88,7 +88,7 @@ flowchart TD
 
 #### A. Registration & Account Initialization Flow
 
-1. **User Input:** User submits Full Name, Email, Username (with real-time slugification and debounced availability verification), and Account Password.
+1. **User Input:** User submits Full Name, Email, Username (with real-time slugification and debounced availability verification), and Account Password (with built-in generator modal).
 2. **Database Hook (`beforeCreate`):** The server automatically generates a unique 16-byte cryptographically random `vaultSalt` (`crypto.getRandomValues(new Uint8Array(16))`), encoded in Base64 and stored in the user record.
 3. **Verification Dispatch:** Better Auth creates a signed stateless JWT token (1-hour validity) and dispatches an activation email via Resend SMTP.
 4. **Client Anti-Spam / Rate Limiting:** The dispatch timestamp (`Date.now()`) is recorded in `localStorage` under `verify_email_cooldown_${email.toLowerCase()}`. The user is redirected to `/verify-email?email=...`.
@@ -126,7 +126,7 @@ flowchart TD
 
 _Executed on the first login when `encryptedVaultKey` is null._
 
-1. User defines a strong Master Password.
+1. User defines a strong Master Password, guided by a 5-tier visual strength meter (Weak, Fair, Good, Strong, Very Strong) and an integrated password generator.
 2. **Client-Side Key Generation (Web Crypto API):**
    - **Derive Master Key:** `masterPassword` + `vaultSalt` is derived via `PBKDF2-HMAC-SHA256` (600,000 rounds) into `masterKey` (AES-256-GCM, `extractable: false`).
    - **Generate Vault Key:** A random 256-bit AES-GCM `vaultKey` is generated (`crypto.subtle.generateKey`).
@@ -149,19 +149,20 @@ _Executed on subsequent logins, new sessions, or page reloads where in-memory ke
 
 _Executed in `/settings` when user updates their Master Password._
 
-1. User provides current and new Master Password.
+1. User provides current and new Master Password (with strength indicator).
 2. **Zero Re-encryption of Vault Items:**
    - Active in-memory `vaultKey` is retained.
    - A new `newMasterKey` is derived from the new password + `vaultSalt`.
    - `rewrapVaultKey(vaultKey, newMasterKey)` wraps the existing `vaultKey` under the new master key.
    - Updated `encryptedVaultKey` and IV are persisted to database.
+   - **Multi-Device Session Eviction:** In a single atomic `prisma.$transaction`, the server updates the key and evicts all other active sessions across other devices (`id: { not: currentSessionId }`).
    - **Result:** All existing items in the vault remain valid and completely untouched.
 
 #### D. Emergency Master Password Reset
 
 1. If Master Password is forgotten, recovery is mathematically impossible under Zero-Knowledge principles.
-2. User accepts an explicit, irreversible acknowledgment.
-3. Server Action `resetMasterPassword` wipes all vault items (`prisma.vaultItem.deleteMany`), nullifies `encryptedVaultKey` / IV, and redirects to `/setup-vault`.
+2. User accepts an explicit, irreversible acknowledgment via confirmation checkbox in an alert dialog.
+3. Server Action `resetMasterPassword` atomically wipes all vault items (`prisma.vaultItem.deleteMany`), nullifies `encryptedVaultKey` / IV, purges all other sessions in a single `prisma.$transaction`, and redirects to `/setup-vault`.
 
 ---
 
@@ -173,7 +174,7 @@ _Executed in `/settings` when user updates their Master Password._
 Form Input (Account / Note)
    │
    ▼ [Step 1: Payload Construction]
-Data Object { email, username, password, pin, notes, credentialHistory }
+Data Object { email, username, phone, password, pin, notes, credentialHistory }
    │
    ▼ [Step 2: JSON Serialization]
 JSON String
@@ -243,27 +244,30 @@ Rendered in React State (`decryptedItems`)
 
 1. **Optimistic Updates:** Toggling item pins executes via React `useOptimistic` for instantaneous UI reaction while `toggleVaultItemPin` runs asynchronously in the background.
 2. **Client-Side Filtering & Search:** Vault searches query decrypted in-memory items (by title, email, username, or note content) without leaking queries to backend server logs.
-3. **Memory Purge on Lock/Sign-Out:** Calling `lock()` sets `vaultKey = null`, immediately removing sensitive items from active component trees.
+3. **Form Dirty State & Change Detection:** Uses deep equality (`lodash.isequal`) combined with history modification state (`isHistoryChanged`) to ensure the Save button only activates when real changes occur.
+4. **Memory Purge on Lock/Sign-Out:** Calling `lock()` sets `vaultKey = null`, immediately removing sensitive items from active component trees.
 
 ---
 
 ### 4.5. Account Settings & Security Flows
 
-1. **Account Password Change:** Updates authentication credentials via Better Auth `changePassword` without altering cryptographic vault keys.
-2. **Account Email Change:** Requires email verification on the new address; sends security alerts to the previous email and invalidates all other active sessions upon completion.
-3. **Account Deletion:** Cascades deletion across `vaultItem`, `user`, and `session` tables, sets temporary `goodbye_token` cookie, and redirects to `/goodbye`.
+1. **Basic Information Management (`BasicInformationForm`):** Allows users to update Full Name and Username with real-time uniqueness validation (1–12 characters, regex `/^[a-z0-9_]+$/`) and session refetch.
+2. **Account Password Change:** Updates authentication credentials via Better Auth `changePassword` without altering cryptographic vault keys.
+3. **Account Email Change:** Requires email verification on the new address; sends security alerts to the previous email and invalidates all other active sessions upon completion.
+4. **Account Deletion & Goodbye Security:** Cascades deletion across `vaultItem`, `user`, and `session` tables, sets an HTTP-only temporary `goodbye_token` cookie (30-second TTL), and redirects to the protected `/goodbye` page.
 
 ---
 
 ## 5. Functional Requirements
 
-### 5.1. Authentication (Better Auth)
+### 5.1. Authentication & Profile Management (Better Auth)
 
 - **FR-AUTH-1:** Account registration with Name, Email, Username, and Password.
 - **FR-AUTH-2:** Automatic generation of a 16-byte cryptographically random `vaultSalt` on user creation.
-- **FR-AUTH-3:** Mandatory email verification via Resend before vault activation.
+- **FR-AUTH-3:** Mandatory email verification via Resend before vault activation with anti-refresh 60-second cooldown timer.
 - **FR-AUTH-4:** Dual identifier login support (Email or Username).
-- **FR-AUTH-5:** Account password reset (independent of Master Password).
+- **FR-AUTH-5:** Account password reset (independent of Master Password) with session invalidation and instant login redirect.
+- **FR-AUTH-6:** User profile management allowing Full Name and Username updates with real-time availability checks and dirty-state tracking.
 
 ### 5.2. Master Password & Vault Lifecycle
 
@@ -272,11 +276,13 @@ Rendered in React State (`decryptedItems`)
 - **FR-VAULT-3 (Lock):** Manual lock button or automatic flush upon page reload.
 - **FR-VAULT-4 (Rewrap):** Changing Master Password unwraps existing `vaultKey` and re-wraps it with the new key without touching vault items.
 - **FR-VAULT-5 (Emergency Reset):** If Master Password is lost, user can purge all vault items and reset Master Password state.
+- **FR-VAULT-6 (Strength Meter):** 5-level real-time visual password strength meter with color progression (Weak to Very Strong) for Master Password creation and update.
+- **FR-VAULT-7 (Atomic Session Eviction):** Master Password rotation and reset operations evict all other sessions atomically in a single database transaction.
 
 ### 5.3. Vault Item Management
 
 - **FR-ITEM-1 (Item Types):**
-  - `ACCOUNT`: Title, URL, Identifiers (Email, **Username / ID**, Phone), optional Credentials (Password, PIN), and Notes.
+  - `ACCOUNT`: Title, URL, Identifiers (Email, **Username / ID**, Phone), optional Credentials (Password, PIN), and Notes. At least one identifier is required; password/PIN are optional.
   - `NOTE`: Title, URL, Content (up to 10,000 characters).
 - **FR-ITEM-2 (Payload Isolation):**
   - _Plaintext Metadata:_ `title`, `url`, `type`, `pinned`, timestamps.
@@ -285,6 +291,7 @@ Rendered in React State (`decryptedItems`)
   - Automatically records replaced passwords/PINs (capped at 10 entries).
   - Dynamic opt-out checkbox (`Save replaced credentials to history`) to avoid storing accidental typos.
   - In-form history deletion: individual entry deletion and `Clear all` button.
+  - Value reveal toggling for past credentials.
 - **FR-ITEM-4 (Operations):** Create, update, delete, search (client-side query), and category filtering (`ALL`, `ACCOUNT`, `NOTE`).
 - **FR-ITEM-5 (Clipboard):** Secure copy to clipboard with toast confirmation.
 
@@ -293,12 +300,18 @@ Rendered in React State (`decryptedItems`)
 - **FR-GEN-1:** Secure random generation using `window.crypto.getRandomValues`.
 - **FR-GEN-2:** Customizable length (8–64 chars) and character sets (uppercase, lowercase, numbers, symbols).
 - **FR-GEN-3:** Option to exclude ambiguous characters (`1`, `l`, `I`, `0`, `O`).
-- **FR-GEN-4:** Quick insertion into registration, setup, and vault forms.
+- **FR-GEN-4 (Universal Integration):** One-click generation and modal insertion available in Registration, Master Password Setup, Vault Forms, and Settings.
 
 ### 5.5. Database Maintenance
 
 - **FR-MAINT-1:** Automated GitHub Actions cron every 3 days (`0 3 */3 * *`) to keep Supabase free-tier database active.
 - **FR-MAINT-2:** Protected API route `/api/cron/keep-alive` with `CRON_SECRET` authentication.
+
+### 5.6. User Interface & Privacy Protections
+
+- **FR-UI-1 (Theme Switching):** System, Light, and Dark theme support via `next-themes` with immediate persistence.
+- **FR-UI-2 (Sign-Out Privacy Overlay):** Full-screen privacy overlay triggered during sign-out to prevent visual flashing of decrypted secrets during route transitions.
+- **FR-UI-3 (Protected Goodbye Route):** Access to `/goodbye` requires a short-lived HTTP-only `goodbye_token` cookie.
 
 ---
 
@@ -351,15 +364,15 @@ export type ActionResponse<T = void> =
   | { success: false; error: string; data?: never };
 ```
 
-| Action                     | Path                                | Purpose                                |
-| :------------------------- | :---------------------------------- | :------------------------------------- |
-| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | Stores initial wrapped vault key       |
-| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | Persists new encrypted item            |
-| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | Updates existing encrypted item        |
-| `deleteVaultItem`          | `src/actions/vault.action.ts`       | Deletes vault item by ID               |
-| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | Toggles pinned status                  |
-| `updateMasterPassword`     | `src/actions/settings.action.ts`    | Persists re-wrapped vault key          |
-| `resetMasterPassword`      | `src/actions/settings.action.ts`    | Wipes vault items and resets key state |
+| Action                     | Path                                | Purpose                                                        |
+| :------------------------- | :---------------------------------- | :------------------------------------------------------------- |
+| `saveEncryptedVaultKey`    | `src/actions/setup-vault.action.ts` | Stores initial wrapped vault key                               |
+| `createEncryptedVaultItem` | `src/actions/vault.action.ts`       | Persists new encrypted item                                    |
+| `updateEncryptedVaultItem` | `src/actions/vault.action.ts`       | Updates existing encrypted item                                |
+| `deleteVaultItem`          | `src/actions/vault.action.ts`       | Deletes vault item by ID                                       |
+| `toggleVaultItemPin`       | `src/actions/vault.action.ts`       | Toggles pinned status                                          |
+| `updateMasterPassword`     | `src/actions/settings.action.ts`    | Persists re-wrapped vault key & evicts other sessions (atomic) |
+| `resetMasterPassword`      | `src/actions/settings.action.ts`    | Wipes vault items, resets key state & evicts sessions (atomic) |
 
 ---
 
@@ -385,6 +398,6 @@ Automated testing is powered by **Vitest**:
 
 ## 9. Product Roadmap
 
-- **Phase 1 (Completed):** Zero-Knowledge Core, Envelope Encryption, In-Depth Flow Architecture, Vault CRUD, Password Generator, Credential History Management, Supabase Keep-Alive.
+- **Phase 1 (Completed):** Zero-Knowledge Core, Envelope Encryption, In-Depth Flow Architecture, Vault CRUD, Password Generator, Credential History Management, Supabase Keep-Alive, Theme Support, Profile Updates.
 - **Phase 2 (Upcoming):** Two-Factor Authentication (TOTP 2FA), Biometric / WebAuthn unlock.
 - **Phase 3 (Future):** Browser Extension (autofill/autosave), Encrypted file attachments, Vault import/export (Bitwarden, 1Password CSV).
