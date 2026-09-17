@@ -8,11 +8,21 @@ import * as z from 'zod';
 
 const encryptedVaultItemSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(100),
-  url: z.string().trim().nullish(),
+  url: z
+    .string()
+    .trim()
+    .max(2048, 'URL exceeds maximum length')
+    .refine((val) => !val || /^https?:\/\//i.test(val), {
+      message: 'URL must start with http:// or https://',
+    })
+    .nullish(),
   pinned: z.boolean().default(false),
   type: z.enum(['ACCOUNT', 'NOTE']),
-  ciphertext: z.string().min(1, 'Ciphertext is required'),
-  iv: z.string().min(1, 'IV is required'),
+  ciphertext: z
+    .string()
+    .min(1, 'Ciphertext is required')
+    .max(500000, 'Ciphertext exceeds maximum size'),
+  iv: z.string().min(1, 'IV is required').max(128, 'IV exceeds maximum size'),
 });
 
 export type EncryptedVaultItemInput = z.infer<typeof encryptedVaultItemSchema>;
@@ -24,6 +34,10 @@ export const createEncryptedVaultItem = async (
     const session = await getServerSession();
     if (!session?.user) {
       return { success: false, error: 'Unauthorized' };
+    }
+
+    if (!session.user.emailVerified) {
+      return { success: false, error: 'Email verification required' };
     }
 
     const parsed = encryptedVaultItemSchema.safeParse(vaultItem);
@@ -51,6 +65,10 @@ export const updateEncryptedVaultItem = async (
     const session = await getServerSession();
     if (!session?.user || !itemId) {
       return { success: false, error: 'Unauthorized' };
+    }
+
+    if (!session.user.emailVerified) {
+      return { success: false, error: 'Email verification required' };
     }
 
     const parsed = encryptedVaultItemSchema.safeParse(vaultItem);
@@ -82,6 +100,10 @@ export const deleteVaultItem = async (id: string): Promise<ActionResponse> => {
       return { success: false, error: 'Unauthorized' };
     }
 
+    if (!session.user.emailVerified) {
+      return { success: false, error: 'Email verification required' };
+    }
+
     const result = await prisma.vaultItem.deleteMany({
       where: { id, userId: session.user.id },
     });
@@ -103,6 +125,10 @@ export const toggleVaultItemPin = async (id: string, pinned: boolean): Promise<A
     const session = await getServerSession();
     if (!session?.user || !id) {
       return { success: false, error: 'Unauthorized' };
+    }
+
+    if (!session.user.emailVerified) {
+      return { success: false, error: 'Email verification required' };
     }
 
     const rowsAffected = await prisma.$executeRaw`

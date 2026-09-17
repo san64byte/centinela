@@ -66,7 +66,7 @@ export default function VaultClient({
 
     let cancelled = false;
 
-    Promise.all(
+    Promise.allSettled(
       initialVaults.map(async (item) => {
         const data: AccountData | NoteData = await decryptData(
           { ciphertext: item.ciphertext, iv: item.iv },
@@ -74,17 +74,27 @@ export default function VaultClient({
         );
         return { ...item, data } as unknown as DecryptedVaultItem;
       }),
-    )
-      .then((result) => {
-        if (!cancelled) setDecryptedItems(result);
-      })
-      .catch((error) => {
-        console.error('Decryption error:', error);
-        if (!cancelled) {
-          toast.error('Failed to decrypt some vault items');
-          setDecryptedItems([]);
+    ).then((results) => {
+      if (cancelled) return;
+
+      const successfulItems: DecryptedVaultItem[] = [];
+      let failureCount = 0;
+
+      for (const res of results) {
+        if (res.status === 'fulfilled') {
+          successfulItems.push(res.value);
+        } else {
+          failureCount++;
+          console.error('Decryption error for item:', res.reason);
         }
-      });
+      }
+
+      if (failureCount > 0) {
+        toast.error(`Failed to decrypt ${failureCount} vault item(s)`);
+      }
+
+      setDecryptedItems(successfulItems);
+    });
 
     return () => {
       cancelled = true;

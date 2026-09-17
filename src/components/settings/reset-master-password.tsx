@@ -27,16 +27,23 @@ import { resetMasterPassword } from '@/actions/settings.action';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useVaultKey } from '@/hooks/use-vault-key';
+import { Input } from '@/components/ui/input';
 
 export default function ResetMasterPassword() {
   const [checked, setChecked] = useState(false);
+  const [password, setPassword] = useState('');
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const { lock } = useVaultKey();
 
   function handleResetMasterPassword() {
+    if (!password.trim()) {
+      toast.error('Please enter your account password.');
+      return;
+    }
+
     startTransition(async () => {
-      const res = await resetMasterPassword();
+      const res = await resetMasterPassword(password);
 
       if (!res.success) {
         toast.error(res.error || 'Something went wrong.');
@@ -90,7 +97,7 @@ export default function ResetMasterPassword() {
                   </span>
                 </div>
               </div>
-              <FieldGroup className="mt-2">
+              <FieldGroup className="mt-2 space-y-3">
                 <Field orientation="horizontal">
                   <Checkbox
                     id="terms-checkbox-desc"
@@ -108,6 +115,22 @@ export default function ResetMasterPassword() {
                     </FieldDescription>
                   </FieldContent>
                 </Field>
+
+                <Field className="space-y-1.5">
+                  <FieldLabel htmlFor="confirm-account-password">Account Password</FieldLabel>
+                  <Input
+                    id="confirm-account-password"
+                    type="password"
+                    placeholder="Enter your account password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isPending}
+                    className="text-xs"
+                  />
+                  <FieldDescription className="text-xs">
+                    Re-enter your account password to authorize resetting your vault.
+                  </FieldDescription>
+                </Field>
               </FieldGroup>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -115,7 +138,7 @@ export default function ResetMasterPassword() {
               <LoadingButton
                 variant="destructive"
                 loading={isPending}
-                disabled={!checked}
+                disabled={!checked || !password.trim()}
                 onClick={handleResetMasterPassword}
               >
                 Reset

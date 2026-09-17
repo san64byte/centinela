@@ -57,6 +57,7 @@ export async function unwrapVaultKey(
   wrappedKeyBase64: string,
   ivBase64: string,
   masterKey: CryptoKey,
+  extractable: boolean = true,
 ): Promise<CryptoKey> {
   return crypto.subtle.unwrapKey(
     'raw',
@@ -64,7 +65,7 @@ export async function unwrapVaultKey(
     masterKey,
     { name: 'AES-GCM', iv: base64ToBuffer(ivBase64) },
     { name: 'AES-GCM', length: AES_KEY_LENGTH },
-    true,
+    extractable,
     ['encrypt', 'decrypt'],
   );
 }

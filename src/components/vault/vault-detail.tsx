@@ -57,12 +57,25 @@ export default function VaultDetail({
 
   const Icon = typeIcons[vault.type];
 
-  const handleCopy = async (text: string, fieldName: string) => {
+  const handleCopy = async (text: string, fieldName: string, isSecret = false) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedField(fieldName);
-      toast.success('Copied to clipboard');
+      toast.success(isSecret ? 'Copied to clipboard (auto-clears in 45s)' : 'Copied to clipboard');
       setTimeout(() => setCopiedField(null), 2000);
+
+      if (isSecret) {
+        setTimeout(async () => {
+          try {
+            const current = await navigator.clipboard.readText();
+            if (current === text) {
+              await navigator.clipboard.writeText('');
+            }
+          } catch {
+            // Reading clipboard may fail if window is out of focus; safely ignore
+          }
+        }, 45000);
+      }
     } catch {
       toast.error('Failed to copy to clipboard');
     }
@@ -157,7 +170,7 @@ export default function VaultDetail({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                onClick={() => handleCopy(value, fieldName)}
+                onClick={() => handleCopy(value, fieldName, isSecret)}
                 disabled={copiedField === fieldName}
                 aria-label={copiedField === fieldName ? 'Copied' : `Copy ${label}`}
                 title={copiedField === fieldName ? 'Copied' : `Copy ${label}`}
@@ -280,7 +293,7 @@ export default function VaultDetail({
                                 <Button
                                   size="icon-xs"
                                   variant="ghost"
-                                  onClick={() => handleCopy(entry.value, `history-${i}`)}
+                                  onClick={() => handleCopy(entry.value, `history-${i}`, true)}
                                   disabled={copiedField === `history-${i}`}
                                   aria-label={copiedField === `history-${i}` ? 'Copied' : 'Copy'}
                                   title={copiedField === `history-${i}` ? 'Copied' : 'Copy'}

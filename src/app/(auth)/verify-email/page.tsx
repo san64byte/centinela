@@ -1,4 +1,3 @@
-import prisma from '@/lib/prisma';
 import { MailOpen } from 'lucide-react';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -22,19 +21,6 @@ export default async function VerifyEmailPage({
   const { email } = await searchParams;
   if (!email || !z.email().safeParse(email).success) {
     redirect('/login');
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { emailVerified: true },
-  });
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  if (user.emailVerified) {
-    redirect('/login?verified=true');
   }
 
   return (

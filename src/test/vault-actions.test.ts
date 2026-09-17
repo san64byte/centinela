@@ -10,7 +10,7 @@ import { updateMasterPassword, resetMasterPassword } from '@/actions/settings.ac
 import prisma from '@/lib/prisma';
 import { getServerSession } from '@/lib/get-session';
 import { Session, User as AuthUser } from '@/lib/auth';
-import { VaultItem, User as PrismaUser } from '@/lib/generated/prisma/client';
+import { VaultItem } from '@/lib/generated/prisma/client';
 
 vi.mock('@/lib/get-session', () => ({
   getServerSession: vi.fn(),
@@ -18,6 +18,10 @@ vi.mock('@/lib/get-session', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+}));
+
+vi.mock('better-auth/crypto', () => ({
+  verifyPassword: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/lib/prisma', () => {
@@ -31,6 +35,11 @@ vi.mock('@/lib/prisma', () => {
       },
       user: {
         update: vi.fn(),
+        updateMany: vi.fn(),
+        findUnique: vi.fn(),
+      },
+      account: {
+        findFirst: vi.fn(),
       },
       session: {
         deleteMany: vi.fn(),
@@ -246,12 +255,12 @@ describe('Vault Server Actions', () => {
     it('harus berhasil menyimpan encryptedVaultKey untuk user yang aktif', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
 
-      vi.mocked(prisma.user.update).mockResolvedValueOnce({} as unknown as PrismaUser);
+      vi.mocked(prisma.user.updateMany).mockResolvedValueOnce({ count: 1 });
 
       const res = await saveEncryptedVaultKey('wrappedKey123', 'iv123');
       expect(res.success).toBe(true);
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: mockUser.id, encryptedVaultKey: null },
         data: {
           encryptedVaultKey: 'wrappedKey123',
           encryptedVaultKeyIv: 'iv123',
@@ -272,15 +281,31 @@ describe('Vault Server Actions', () => {
       expect(prisma.$transaction).toHaveBeenCalled();
     });
 
-    it('harus mereset master password dan menghapus seluruh isi vault', async () => {
+    it('harus mereset master password dan menghapus seluruh isi vault setelah verifikasi password', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        userId: mockUser.id,
+        providerId: 'credential',
+        password: 'hashed_password',
+        accountId: 'acc_123',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       vi.mocked(prisma.$transaction).mockResolvedValueOnce([
         { count: 5 } as unknown as never,
         mockUser as unknown as never,
       ]);
 
-      const res = await resetMasterPassword();
+      const res = await resetMasterPassword('correctPassword123!');
       expect(res.success).toBe(true);
       expect(prisma.$transaction).toHaveBeenCalled();
     });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,8 +8,25 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
-  // Protect endpoint if CRON_SECRET is configured
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('CRON_SECRET is not configured in environment variables.');
+    return NextResponse.json(
+      { success: false, error: 'Server configuration error' },
+      { status: 500 },
+    );
+  }
+
+  const expectedAuth = `Bearer ${cronSecret}`;
+  const providedAuth = authHeader || '';
+
+  const expectedBuffer = Buffer.from(expectedAuth);
+  const providedBuffer = Buffer.from(providedAuth);
+
+  const isAuthorized =
+    expectedBuffer.length === providedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+
+  if (!isAuthorized) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -24,11 +42,11 @@ export async function GET(request: NextRequest) {
       timestamp: result[0]?.now ?? new Date().toISOString(),
     });
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
+    console.error('Keep-alive database query failed:', error);
     return NextResponse.json(
       {
         success: false,
-        error: errorMessage,
+        error: 'Database keep-alive ping failed',
       },
       { status: 500 },
     );

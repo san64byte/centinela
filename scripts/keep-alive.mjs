@@ -16,7 +16,7 @@ async function pingDatabase() {
   const client = new Client({
     connectionString,
     ssl: {
-      rejectUnauthorized: false,
+      rejectUnauthorized: true,
     },
     connectionTimeoutMillis: 10000,
   });
