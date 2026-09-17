@@ -22,4 +22,5 @@ jobs:
       - name: Ping Supabase Database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_CA_CERT: ${{ secrets.SUPABASE_CA_CERT }}
         run: node scripts/keep-alive.mjs

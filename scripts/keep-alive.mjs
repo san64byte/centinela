@@ -13,11 +13,21 @@ async function pingDatabase() {
 
   console.log('🔄 Connecting to Supabase database...');
 
+  const ca = process.env.SUPABASE_CA_CERT || process.env.DATABASE_CA;
+
   const client = new Client({
     connectionString,
-    ssl: {
-      rejectUnauthorized: true,
-    },
+    ssl: ca
+      ? {
+          rejectUnauthorized: true,
+          ca,
+        }
+      : {
+          // Supabase PostgreSQL uses an internal self-signed CA.
+          // Fallback to rejectUnauthorized: false when CA cert is not provided
+          // to avoid SELF_SIGNED_CERT_IN_CHAIN errors in automated scripts.
+          rejectUnauthorized: false,
+        },
     connectionTimeoutMillis: 10000,
   });
 
