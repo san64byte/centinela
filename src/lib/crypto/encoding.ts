@@ -27,7 +27,3 @@ export function generateSalt(): string {
 export function generateIvBytes(): Uint8Array<ArrayBuffer> {
   return generateRandomBytes(12);
 }
-
-export function generateIv(): string {
-  return bufferToBase64(generateIvBytes());
-}

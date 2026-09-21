@@ -3,9 +3,11 @@
 import LoadingButton from '@/components/loading-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
+import { PasswordStrengthMeter } from '@/components/password-strength-meter';
 import { useVaultKey } from '@/hooks/use-vault-key';
-import { User } from '@/lib/auth';
+import type { User } from '@/lib/auth';
 import { changeMasterPassword } from '@/lib/crypto/setup';
+import { unlockVaultKey } from '@/lib/crypto/keys';
 import { useAppForm } from '@/lib/form';
 import { updateMasterPasswordSchema } from '@/schemas/vault-schema';
 import { KeyRound } from 'lucide-react';
@@ -17,30 +19,12 @@ import ResetMasterPassword from './reset-master-password';
 
 export default function MasterPasswordForm({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
-  const [passwordStrength, setPasswordStrength] = useState(0);
-  const { unlock } = useVaultKey();
+  const { setUnlockedKey } = useVaultKey();
   const router = useRouter();
-
-  const calculateStrenth = (pwd: string) => {
-    let strength = 0;
-    if (pwd.length >= 8) strength++;
-    if (pwd.length >= 12) strength++;
-    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) strength++;
-    if (/\d/.test(pwd)) strength++;
-    if (/[^a-zA-Z0-9]/.test(pwd)) strength++;
-    return strength;
-  };
-  const strengthLabels = ['Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
-  const strengthColors = [
-    'bg-destructive',
-    'bg-yellow-500',
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-emerald-500',
-  ];
 
   const form = useAppForm({
     defaultValues: {
+      accountPassword: '',
       currentMasterPassword: '',
       newMasterPassword: '',
     },
@@ -51,14 +35,15 @@ export default function MasterPasswordForm({ user }: { user: User }) {
     onSubmit: async ({ value }) => {
       setError(null);
 
-      let currentVaultKey;
+      let tempVaultKey: CryptoKey;
 
       try {
-        currentVaultKey = await unlock(
+        tempVaultKey = await unlockVaultKey(
           value.currentMasterPassword,
           user.vaultSalt!,
           user.encryptedVaultKey!,
           user.encryptedVaultKeyIv!,
+          true,
         );
       } catch {
         setError('The current master password is incorrect.');
@@ -66,17 +51,46 @@ export default function MasterPasswordForm({ user }: { user: User }) {
       }
 
       try {
-        const { encryptedVaultKey, encryptedVaultKeyIv } = await changeMasterPassword(
-          currentVaultKey,
-          value.newMasterPassword,
+        const {
+          authProof,
+          newVaultSalt,
+          newVaultVerifier,
+          encryptedVaultKey,
+          encryptedVaultKeyIv,
+        } = await changeMasterPassword(
+          tempVaultKey,
+          value.currentMasterPassword,
           user.vaultSalt!,
+          value.newMasterPassword,
         );
 
-        const res = await updateMasterPassword(encryptedVaultKey, encryptedVaultKeyIv);
+        const res = await updateMasterPassword(
+          encryptedVaultKey,
+          encryptedVaultKeyIv,
+          value.accountPassword,
+          {
+            newVaultSalt,
+            newVaultVerifier,
+            authProof,
+          },
+        );
 
         if (!res.success) {
           setError(res.error || 'Failed to change the master password.');
           return;
+        }
+
+        try {
+          const safeKey = await unlockVaultKey(
+            value.newMasterPassword,
+            newVaultSalt,
+            encryptedVaultKey,
+            encryptedVaultKeyIv,
+            false,
+          );
+          setUnlockedKey(safeKey);
+        } catch {
+          // Fallback if re-unwrap fails in background
         }
 
         toast.success('Master password changed successfully.');
@@ -120,6 +134,15 @@ export default function MasterPasswordForm({ user }: { user: User }) {
           <FieldGroup>
             {error && <FieldError>{error}</FieldError>}
 
+            <form.AppField name="accountPassword">
+              {(field) => (
+                <field.PasswordField
+                  label="Account Password"
+                  placeholder="Enter your account login password"
+                />
+              )}
+            </form.AppField>
+
             <form.AppField name="currentMasterPassword">
               {(field) => (
                 <field.PasswordField
@@ -134,30 +157,8 @@ export default function MasterPasswordForm({ user }: { user: User }) {
                 <field.PasswordField
                   label="New Master Password"
                   placeholder="Enter new master password"
-                  onChange={(e) => {
-                    field.handleChange(e.target.value);
-                    setPasswordStrength(calculateStrenth(e.target.value));
-                  }}
                 >
-                  {field.state.value ? (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1 flex-1 rounded-full ${
-                              i < passwordStrength
-                                ? strengthColors[passwordStrength - 1]
-                                : 'bg-border'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Strength: {strengthLabels[Math.max(0, passwordStrength - 1)] || 'Very Weak'}
-                      </p>
-                    </div>
-                  ) : null}
+                  <PasswordStrengthMeter password={field.state.value} />
                 </field.PasswordField>
               )}
             </form.AppField>

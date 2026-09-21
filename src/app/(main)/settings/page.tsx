@@ -45,13 +45,13 @@ export default async function AccountPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="general">
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-10">
             <BasicInformationForm user={user} />
             <EmailForm currentEmail={user.email} />
           </div>
         </TabsContent>
         <TabsContent value="security">
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-10">
             <PasswordForm />
             {isHaveMasterPassword && <MasterPasswordForm user={user} />}
             <DeleteAccount />

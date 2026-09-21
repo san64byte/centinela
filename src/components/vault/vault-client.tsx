@@ -13,7 +13,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
-import { AccountData, NoteData, DecryptedVaultItem, VaultItemType } from '@/types/vault-type';
+import { DecryptedVaultItem, VaultItemType } from '@/types/vault-type';
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react';
 import VaultCard from './vault-card';
 import VaultDetail from './vault-detail';
@@ -21,8 +21,8 @@ import { useVaultKey } from '@/hooks/use-vault-key';
 import { useRouter } from 'next/navigation';
 import UnlockVault from './unlock-vault';
 import { VaultItem as VaultItemRecord } from '@/lib/generated/prisma/client';
-import { decryptData } from '@/lib/crypto/encryption';
-import { User } from '@/lib/auth';
+import { decryptVaultItem } from '@/lib/crypto/encryption';
+import type { User } from '@/lib/auth';
 import { toast } from 'sonner';
 import { toggleVaultItemPin } from '@/actions/vault.action';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ButtonGroup } from '@/components/ui/button-group';
+import LockVaultButton from '@/components/lock-vault-button';
 
 type FilterType = VaultItemType | 'ALL';
 type ItemDialogState =
@@ -66,35 +67,29 @@ export default function VaultClient({
 
     let cancelled = false;
 
-    Promise.allSettled(
-      initialVaults.map(async (item) => {
-        const data: AccountData | NoteData = await decryptData(
-          { ciphertext: item.ciphertext, iv: item.iv },
-          vaultKey,
-        );
-        return { ...item, data } as unknown as DecryptedVaultItem;
-      }),
-    ).then((results) => {
-      if (cancelled) return;
+    Promise.allSettled(initialVaults.map((item) => decryptVaultItem(item, vaultKey))).then(
+      (results) => {
+        if (cancelled) return;
 
-      const successfulItems: DecryptedVaultItem[] = [];
-      let failureCount = 0;
+        const successfulItems: DecryptedVaultItem[] = [];
+        let failureCount = 0;
 
-      for (const res of results) {
-        if (res.status === 'fulfilled') {
-          successfulItems.push(res.value);
-        } else {
-          failureCount++;
-          console.error('Decryption error for item:', res.reason);
+        for (const res of results) {
+          if (res.status === 'fulfilled') {
+            successfulItems.push(res.value);
+          } else {
+            failureCount++;
+            console.error('Decryption error for item:', res.reason);
+          }
         }
-      }
 
-      if (failureCount > 0) {
-        toast.error(`Failed to decrypt ${failureCount} vault item(s)`);
-      }
+        if (failureCount > 0) {
+          toast.error(`Failed to decrypt ${failureCount} vault item(s)`);
+        }
 
-      setDecryptedItems(successfulItems);
-    });
+        setDecryptedItems(successfulItems);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -119,9 +114,9 @@ export default function VaultClient({
           const inTitle = item.title.toLowerCase().includes(query);
           const inSubTitle =
             item.type === 'ACCOUNT' &&
-            (item.data.email?.toLowerCase().includes(query) ||
-              item.data.username?.toLowerCase().includes(query));
-          const inContent = item.type === 'NOTE' && item.data.content.toLowerCase().includes(query);
+            (item.email?.toLowerCase().includes(query) ||
+              item.username?.toLowerCase().includes(query));
+          const inContent = item.type === 'NOTE' && item.content.toLowerCase().includes(query);
           return inTitle || inSubTitle || inContent;
         })
       : optimisticItems;
@@ -195,13 +190,18 @@ export default function VaultClient({
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">My Vault</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isUnlocked
-            ? `${optimisticItems.length} items secured with zero-knowledge encryption.`
-            : 'Vault is encrypted and protected.'}
-        </p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            My Vault
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isUnlocked
+              ? `${optimisticItems.length} items secured with zero-knowledge encryption.`
+              : 'Vault is encrypted and protected.'}
+          </p>
+        </div>
+        <LockVaultButton />
       </div>
 
       <div className="mb-8 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -323,7 +323,6 @@ export default function VaultClient({
                 key={vault.id}
                 vault={vault}
                 onView={(item) => setDialogState({ mode: 'view', item })}
-                onEdit={(item) => setDialogState({ mode: 'edit', item })}
                 onTogglePin={handleTogglePin}
               />
             ))}
@@ -347,7 +346,6 @@ export default function VaultClient({
                 key={vault.id}
                 vault={vault}
                 onView={(item) => setDialogState({ mode: 'view', item })}
-                onEdit={(item) => setDialogState({ mode: 'edit', item })}
                 onTogglePin={handleTogglePin}
               />
             ))}

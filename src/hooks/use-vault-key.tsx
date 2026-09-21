@@ -4,12 +4,16 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { deriveMasterKey, unwrapVaultKey } from '@/lib/crypto/keys';
+import { unlockVaultKey } from '@/lib/crypto/keys';
+import { toast } from 'sonner';
+
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 menit
 
 interface VaultKeyContextValue {
   vaultKey: CryptoKey | null;
@@ -20,15 +24,26 @@ interface VaultKeyContextValue {
     encryptedVaultKey: string,
     encryptedVaultKeyIv: string,
   ) => Promise<CryptoKey>;
-  setUnlockedKey: (vaultKey: CryptoKey) => void;
   lock: () => void;
+  setUnlockedKey: (key: CryptoKey) => void;
 }
 
 const VaultKeyContext = createContext<VaultKeyContextValue | null>(null);
 
 export function VaultKeyProvider({ children }: { children: ReactNode }) {
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
+  const lastActivityRef = useRef<number>(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
   const unlockingRef = useRef(false);
+
+  const lock = useCallback(() => {
+    setVaultKey(null);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   const unlock = useCallback(
     async (
@@ -44,9 +59,15 @@ export function VaultKeyProvider({ children }: { children: ReactNode }) {
       unlockingRef.current = true;
 
       try {
-        const masterKey = await deriveMasterKey(masterPassword, vaultSalt);
-        const key = await unwrapVaultKey(encryptedVaultKey, encryptedVaultKeyIv, masterKey);
+        const key = await unlockVaultKey(
+          masterPassword,
+          vaultSalt,
+          encryptedVaultKey,
+          encryptedVaultKeyIv,
+          false,
+        );
 
+        lastActivityRef.current = Date.now();
         setVaultKey(key);
         return key;
       } finally {
@@ -57,12 +78,45 @@ export function VaultKeyProvider({ children }: { children: ReactNode }) {
   );
 
   const setUnlockedKey = useCallback((key: CryptoKey) => {
+    if (key.extractable) {
+      console.warn(
+        'Attempted to store extractable key in VaultKeyProvider. Refusing for security.',
+      );
+      return;
+    }
+    lastActivityRef.current = Date.now();
     setVaultKey(key);
   }, []);
 
-  const lock = useCallback(() => {
-    setVaultKey(null);
-  }, []);
+  // Auto-lock timer based on user inactivity
+  useEffect(() => {
+    if (!vaultKey) return;
+
+    lastActivityRef.current = Date.now();
+
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+    events.forEach((event) => {
+      window.addEventListener(event, updateActivity, { passive: true });
+    });
+
+    const intervalId = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= INACTIVITY_TIMEOUT_MS) {
+        lock();
+        toast.info('Vault locked due to 15 minutes of inactivity.');
+      }
+    }, 10_000);
+
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, updateActivity);
+      });
+      clearInterval(intervalId);
+    };
+  }, [vaultKey, lock]);
 
   const value = useMemo(
     () => ({

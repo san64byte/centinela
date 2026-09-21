@@ -10,37 +10,40 @@ export interface CredentialHistoryEntry {
   changedAt: string;
 }
 
-// Type ACCOUNT
-export interface AccountData {
+// Base payload for common fields
+export interface BaseVaultPayload {
+  title: string;
+  url?: string;
+}
+
+// Type ACCOUNT (Flattened)
+export interface AccountVaultPayload extends BaseVaultPayload {
+  type: 'ACCOUNT';
   email?: string;
   username?: string;
   phone?: string;
   password?: string;
   pin?: string;
   notes?: string;
-
   credentialHistory?: CredentialHistoryEntry[];
 }
 
-// Type NOTE
-export interface NoteData {
+// Type NOTE (Flattened)
+export interface NoteVaultPayload extends BaseVaultPayload {
+  type: 'NOTE';
   content: string;
 }
 
-export type VaultItemData =
-  | { type: 'ACCOUNT'; data: AccountData }
-  | { type: 'NOTE'; data: NoteData };
+// Discriminated union of payload encrypted into AES-GCM ciphertext (Zero-Knowledge)
+export type EncryptedVaultPayload = AccountVaultPayload | NoteVaultPayload;
 
-// Metadata Vault
+// Metadata stored in plaintext in the database
 export interface VaultItemMetadata {
-  title: string;
-  url?: string;
   pinned: boolean;
 }
 
-// type gabungan metadata + vault
-export type DecryptedVaultItem = Omit<PrismaVaultItem, 'ciphertext' | 'iv' | 'type'> &
-  VaultItemData;
+// Type gabungan metadata Prisma terdekripsi + payload flat
+export type DecryptedVaultItem = Omit<PrismaVaultItem, 'ciphertext' | 'iv'> & EncryptedVaultPayload;
 
-// Draft form input sebelum disimpan (belum ada id/timestamp/credentialHistory)
-export type VaultItemFormInput = VaultItemMetadata & VaultItemData;
+// Draft form input sebelum disimpan
+export type VaultItemFormInput = VaultItemMetadata & EncryptedVaultPayload;

@@ -1,10 +1,11 @@
+import 'server-only';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import prisma from '@/lib/prisma';
 import { username } from 'better-auth/plugins';
 import { generateSalt } from './crypto/encoding';
-import { nextCookies } from 'better-auth/next-js';
 import { sendEmail } from './email';
+import { nextCookies } from 'better-auth/next-js';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { cookies } from 'next/headers';
 
@@ -15,6 +16,15 @@ export const auth = betterAuth({
 
   advanced: {
     useSecureCookies: process.env.NODE_ENV === 'production',
+  },
+
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 hari masa aktif sesi
+    updateAge: 60 * 60 * 24, // Rotasi sesi setiap 24 jam
+  },
+
+  rateLimit: {
+    enabled: true,
   },
 
   emailAndPassword: {
@@ -42,7 +52,7 @@ export const auth = betterAuth({
           text: 'Someone tried to create an account using your email address. If this was you, try signing in instead. If not, you can safely ignore this email.',
         });
       } catch (err) {
-        console.error('Failed to send reset password email:', err);
+        console.error('Failed to send existing user sign-up notice email:', err);
       }
     },
   },
@@ -51,6 +61,17 @@ export const auth = betterAuth({
     changeEmail: {
       enabled: true,
       updateEmailWithoutVerification: false,
+      sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+        try {
+          await sendEmail({
+            to: user.email,
+            subject: 'Confirm request to change your Centinela email (Step 1 of 2)',
+            text: `A request was made to change your Centinela account email address from ${user.email} to ${newEmail}.\n\nStep 1 of 2: Click this link to approve this request:\n${url}\n\nImportant: Your email address will NOT change immediately after clicking this link. Once you approve this request, a final verification email will be sent to ${newEmail} to complete the change.\n\nIf you did not make this request, someone may be attempting to access your account. Please change your account password immediately.`,
+          });
+        } catch (err) {
+          console.error('Failed to send change-email confirmation email:', err);
+        }
+      },
     },
     deleteUser: {
       enabled: true,
@@ -80,6 +101,7 @@ export const auth = betterAuth({
     },
     additionalFields: {
       vaultSalt: { type: 'string', required: false, input: false },
+      vaultVerifier: { type: 'string', required: false, input: false },
       encryptedVaultKey: { type: 'string', required: false, input: false },
       encryptedVaultKeyIv: { type: 'string', required: false, input: false },
     },
@@ -89,24 +111,58 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
 
-    async sendVerificationEmail({ user, url }, request) {
-      const isChangeEmail = request?.url?.includes('/change-email');
+    async sendVerificationEmail(data, request) {
+      const { user, url } = data;
+      const token = (data as { token?: string }).token;
+
+      let isChangeEmail = false;
+
+      // 1. Cek dari request context Better Auth jika tersedia
+      if (request?.url?.includes('/change-email')) {
+        isChangeEmail = true;
+      }
+
+      // 2. Cek dari payload token JWT verifikasi
+      if (!isChangeEmail && token && typeof token === 'string') {
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            if (payload.requestType === 'change-email-verification' || Boolean(payload.updateTo)) {
+              isChangeEmail = true;
+            }
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+
+      // 3. Cek dari callbackURL pada URL verifikasi
+      if (!isChangeEmail && (url.includes('email-change') || url.includes('email-changed'))) {
+        isChangeEmail = true;
+      }
+
+      // If change-email, redirect to /email-changed after verification
+      const finalUrl =
+        isChangeEmail && url.includes('callbackURL=')
+          ? url.replace(/callbackURL=[^&]+/, `callbackURL=${encodeURIComponent('/email-changed')}`)
+          : url;
 
       const content = isChangeEmail
         ? {
-            subject: 'Confirm your new email',
-            text: `Click the link to confirm this email: ${url}`,
+            subject: 'Verify your new Centinela email address (Step 2 of 2)',
+            text: `You approved changing your Centinela account email to this address (${user.email}).\n\nStep 2 of 2: Click the link below to verify this new email and activate it on your account:\n${finalUrl}\n\nOnce verified, your account email will be updated, and other active sessions will be signed out for your security.`,
           }
         : {
             subject: 'Verify your email',
-            text: `Welcome! Click the link to verify your email and get started: ${url}`,
+            text: `Welcome to Centinela! Click the link to verify your email and get started: ${finalUrl}`,
           };
 
       try {
         await sendEmail({ to: user.email, ...content });
       } catch (err) {
         console.error(
-          `Failed to send ${isChangeEmail ? 'change-email confirmation' : 'signup verification'} email:`,
+          `Failed to send ${isChangeEmail ? 'change-email verification' : 'signup verification'} email:`,
           err,
         );
       }
@@ -202,4 +258,5 @@ export const auth = betterAuth({
 });
 
 export type Session = typeof auth.$Infer.Session;
+export type SessionRecord = typeof auth.$Infer.Session.session;
 export type User = typeof auth.$Infer.Session.user;

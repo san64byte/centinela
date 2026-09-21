@@ -2,7 +2,6 @@
 
 import LoadingButton from '@/components/loading-button';
 import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field';
-import { useSignOutState } from '@/hooks/use-signout';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
 import { cn } from '@/lib/utils';
@@ -10,7 +9,7 @@ import { loginSchema } from '@/schemas/auth-schema';
 import { ErrorContext } from 'better-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
 import * as z from 'zod';
 import { CircleCheck } from 'lucide-react';
@@ -63,10 +62,6 @@ export default function LoginForm({ className, isVerified, ...props }: LoginForm
       }
     },
   });
-
-  useEffect(() => {
-    useSignOutState.getState().setSignOut(false);
-  }, []);
 
   return (
     <form

@@ -51,3 +51,8 @@ export const withEmailSchema = z.object({
 export const withPasswordSchema = z.object({
   password: passwordSchema,
 });
+
+export const changeEmailSchema = z.object({
+  email: emailSchema,
+  currentPassword: z.string().min(1, 'Account password is required'),
+});

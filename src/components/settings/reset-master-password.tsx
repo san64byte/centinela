@@ -23,18 +23,15 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useState, useTransition } from 'react';
 import LoadingButton from '@/components/loading-button';
-import { resetMasterPassword } from '@/actions/settings.action';
+import { requestResetMasterPassword } from '@/actions/settings.action';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
-import { useVaultKey } from '@/hooks/use-vault-key';
-import { Input } from '@/components/ui/input';
+import { InputPassword } from '../input-password';
 
 export default function ResetMasterPassword() {
+  const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState(false);
   const [password, setPassword] = useState('');
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
-  const { lock } = useVaultKey();
 
   function handleResetMasterPassword() {
     if (!password.trim()) {
@@ -43,16 +40,17 @@ export default function ResetMasterPassword() {
     }
 
     startTransition(async () => {
-      const res = await resetMasterPassword(password);
+      const res = await requestResetMasterPassword(password);
 
       if (!res.success) {
         toast.error(res.error || 'Something went wrong.');
         return;
       }
 
-      lock();
-      toast.success('Master password reset successfully.');
-      router.push('/setup-vault');
+      toast.success('Confirmation email sent! Please check your inbox.');
+      setPassword('');
+      setChecked(false);
+      setOpen(false);
     });
   }
 
@@ -67,7 +65,7 @@ export default function ResetMasterPassword() {
           </p>
         </div>
 
-        <AlertDialog>
+        <AlertDialog open={open} onOpenChange={setOpen}>
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
@@ -85,14 +83,15 @@ export default function ResetMasterPassword() {
               </AlertDialogMedia>
               <AlertDialogTitle>Reset master password?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to reset your master password?
+                We will send a confirmation link to your email before resetting your master
+                password.
               </AlertDialogDescription>
               <div className="mt-2 flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-start text-xs text-destructive">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                 <div className="space-y-0.5">
                   <span className="block font-semibold">Irreversible Action</span>
                   <span className="text-muted-foreground">
-                    Since we never store your master password, resetting it will immediately and
+                    Since we never store your master password, confirming the reset via email will
                     permanently delete all items in your vault.
                   </span>
                 </div>
@@ -118,9 +117,8 @@ export default function ResetMasterPassword() {
 
                 <Field className="space-y-1.5">
                   <FieldLabel htmlFor="confirm-account-password">Account Password</FieldLabel>
-                  <Input
+                  <InputPassword
                     id="confirm-account-password"
-                    type="password"
                     placeholder="Enter your account password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -128,7 +126,8 @@ export default function ResetMasterPassword() {
                     className="text-xs"
                   />
                   <FieldDescription className="text-xs">
-                    Re-enter your account password to authorize resetting your vault.
+                    Re-enter your account password to authorize sending the reset confirmation
+                    email.
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -141,7 +140,7 @@ export default function ResetMasterPassword() {
                 disabled={!checked || !password.trim()}
                 onClick={handleResetMasterPassword}
               >
-                Reset
+                Send confirmation email
               </LoadingButton>
             </AlertDialogFooter>
           </AlertDialogContent>

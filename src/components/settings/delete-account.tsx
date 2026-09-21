@@ -24,18 +24,33 @@ import {
 } from '@/components/ui/field';
 import { useVaultKey } from '@/hooks/use-vault-key';
 import { authClient } from '@/lib/auth-client';
+import { verifyAccountPassword } from '@/actions/settings.action';
 import { Trash2, TriangleAlert } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
+import { InputPassword } from '../input-password';
 
 export default function DeleteAccount() {
   const { lock } = useVaultKey();
+  const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function handleDeleteAccount() {
+    if (!password.trim()) {
+      toast.error('Please enter your account password.');
+      return;
+    }
+
     startTransition(async () => {
+      const verifyRes = await verifyAccountPassword(password);
+      if (!verifyRes.success) {
+        toast.error(verifyRes.error || 'Incorrect account password');
+        return;
+      }
+
       const { error } = await authClient.deleteUser({
         callbackURL: '/goodbye',
       });
@@ -48,6 +63,9 @@ export default function DeleteAccount() {
       lock();
       toast.info('Check your email for the account deletion confirmation.');
       setSent(true);
+      setPassword('');
+      setChecked(false);
+      setOpen(false);
     });
   }
 
@@ -74,7 +92,7 @@ export default function DeleteAccount() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <AlertDialog>
+        <AlertDialog open={open} onOpenChange={setOpen}>
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
@@ -104,7 +122,7 @@ export default function DeleteAccount() {
                   </span>
                 </div>
               </div>
-              <FieldGroup className="mt-2">
+              <FieldGroup className="mt-2 space-y-3">
                 <Field orientation="horizontal">
                   <Checkbox
                     id="delete-account-confirm"
@@ -120,14 +138,38 @@ export default function DeleteAccount() {
                     </FieldDescription>
                   </FieldContent>
                 </Field>
+
+                <Field className="space-y-1.5">
+                  <FieldLabel htmlFor="delete-account-password">Account Password</FieldLabel>
+                  <InputPassword
+                    id="delete-account-password"
+                    placeholder="Enter your account password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isPending}
+                    className="text-xs"
+                  />
+                  <FieldDescription className="text-xs">
+                    Re-enter your account password to authorize sending the deletion confirmation
+                    email.
+                  </FieldDescription>
+                </Field>
               </FieldGroup>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel variant="outline">Cancel</AlertDialogCancel>
+              <AlertDialogCancel
+                variant="outline"
+                onClick={() => {
+                  setPassword('');
+                  setChecked(false);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
               <LoadingButton
                 variant="destructive"
                 loading={isPending}
-                disabled={!checked || isPending}
+                disabled={!checked || !password.trim() || isPending}
                 onClick={handleDeleteAccount}
               >
                 Send confirmation

@@ -16,6 +16,10 @@ export default async function SetupUnlockPage() {
 
   if (!user) redirect('/login');
 
+  if (!user.emailVerified) {
+    redirect(`/verify-email?email=${encodeURIComponent(user.email)}`);
+  }
+
   const isHaveVault = user.encryptedVaultKey !== null && user.encryptedVaultKeyIv !== null;
 
   if (isHaveVault) redirect('/vault');

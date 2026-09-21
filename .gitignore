@@ -44,5 +44,4 @@ next-env.d.ts
 /src/lib/generated/prisma
 
 # internal docs & audit reports
-TODO.md
-SECURITY_AUDIT_REPORT*.md
+SECURITY_AUDIT*.md

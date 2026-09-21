@@ -6,10 +6,27 @@ const pinPattern = /^\d{4,12}$/;
 
 export const masterPasswordSchema = z
   .string()
-  .min(8, 'Master password must be at least 8 characters');
+  .min(12, 'Master password must be at least 12 characters')
+  .regex(/[A-Z]/, 'Master password must contain at least 1 uppercase letter')
+  .regex(/[a-z]/, 'Master password must contain at least 1 lowercase letter')
+  .regex(/[0-9]/, 'Master password must contain at least 1 number')
+  .regex(/[^A-Za-z0-9]/, 'Master password must contain at least 1 special character');
 
-export const accountDataSchema = z
-  .object({
+export const credentialHistoryEntrySchema = z.object({
+  type: z.enum(['PASSWORD', 'PIN']),
+  value: z.string(),
+  changedAt: z.string(),
+});
+
+export const metadataSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required.').max(100, 'Maximum 100 characters'),
+  url: z.string().trim().pipe(z.url('Invalid URL format')).optional().or(z.literal('')),
+  pinned: z.boolean(),
+});
+
+export const accountVaultItemSchema = metadataSchema
+  .extend({
+    type: z.literal('ACCOUNT'),
     email: z.string().trim().pipe(z.email('Invalid email format')).optional().or(z.literal('')),
     username: z.string().trim().optional(),
     phone: z
@@ -23,6 +40,7 @@ export const accountDataSchema = z
     pin: z.string().regex(pinPattern, 'PIN must be 4-12 digits').optional().or(z.literal('')),
 
     notes: z.string().trim().max(2000, 'Notes must be at most 2,000 characters').optional(),
+    credentialHistory: z.array(credentialHistoryEntrySchema).optional(),
   })
   .superRefine((data, ctx) => {
     const hasIdentifier = Boolean(data.email || data.username || data.phone);
@@ -34,51 +52,55 @@ export const accountDataSchema = z
     }
   });
 
-export const noteDataSchema = z.object({
+export const noteVaultItemSchema = metadataSchema.extend({
+  type: z.literal('NOTE'),
   content: z
     .string()
     .trim()
     .max(10_000, 'Notes must be at most 10,000 characters')
     .refine((val) => val.length > 0, {
-      error: 'Note content cannot be empty',
+      message: 'Note content cannot be empty',
     }),
 });
 
-export const metadataSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required.').max(100, 'Maximum 100 characters'),
-  url: z.string().trim().pipe(z.url('Invalid URL format')).optional().or(z.literal('')),
-  pinned: z.boolean(),
-});
-
 export const vaultItemFormSchema = z.discriminatedUnion('type', [
-  metadataSchema.extend({
-    type: z.literal('ACCOUNT'),
-    data: accountDataSchema,
-  }),
-  metadataSchema.extend({
-    type: z.literal('NOTE'),
-    data: noteDataSchema,
-  }),
+  accountVaultItemSchema,
+  noteVaultItemSchema,
 ]);
 
 export const setupMasterPasswordSchema = z
   .object({
+    accountPassword: z.string().min(1, 'Account password is required'),
     masterPassword: masterPasswordSchema,
     confirmMasterPassword: z.string().min(1, 'Password confirmation is required'),
   })
   .refine((data) => data.masterPassword === data.confirmMasterPassword, {
-    error: 'Passwords do not match',
+    message: 'Passwords do not match',
     path: ['confirmMasterPassword'],
+  })
+  .refine((data) => data.masterPassword !== data.accountPassword, {
+    message: 'Master password cannot be the same as your account login password',
+    path: ['masterPassword'],
   });
 
 export const unlockVaultSchema = z.object({
-  masterPassword: masterPasswordSchema,
+  masterPassword: z.string().min(1, 'Master password is required'),
 });
 
-export const updateMasterPasswordSchema = z.object({
-  currentMasterPassword: z.string().min(1, 'Enter your current master password'),
-  newMasterPassword: masterPasswordSchema,
-});
+export const updateMasterPasswordSchema = z
+  .object({
+    accountPassword: z.string().min(1, 'Enter your account password'),
+    currentMasterPassword: z.string().min(1, 'Enter your current master password'),
+    newMasterPassword: masterPasswordSchema,
+  })
+  .refine((data) => data.newMasterPassword !== data.accountPassword, {
+    message: 'Master password cannot be the same as your account login password',
+    path: ['newMasterPassword'],
+  })
+  .refine((data) => data.newMasterPassword !== data.currentMasterPassword, {
+    message: 'New master password must be different from current master password',
+    path: ['newMasterPassword'],
+  });
 
 type _SchemaMatchesType =
   z.infer<typeof vaultItemFormSchema> extends VaultItemFormInput
@@ -89,5 +111,3 @@ type _SchemaMatchesType =
 
 const _typeCheck: _SchemaMatchesType = true;
 void _typeCheck;
-
-export type VaultItemFormSchema = z.infer<typeof vaultItemFormSchema>;

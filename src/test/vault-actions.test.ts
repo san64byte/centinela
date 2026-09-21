@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import crypto from 'node:crypto';
 import {
   createEncryptedVaultItem,
   updateEncryptedVaultItem,
@@ -6,7 +7,7 @@ import {
   toggleVaultItemPin,
 } from '@/actions/vault.action';
 import { saveEncryptedVaultKey } from '@/actions/setup-vault.action';
-import { updateMasterPassword, resetMasterPassword } from '@/actions/settings.action';
+import { updateMasterPassword, confirmResetMasterPassword } from '@/actions/settings.action';
 import prisma from '@/lib/prisma';
 import { getServerSession } from '@/lib/get-session';
 import { Session, User as AuthUser } from '@/lib/auth';
@@ -21,7 +22,15 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('better-auth/crypto', () => ({
-  verifyPassword: vi.fn().mockResolvedValue(true),
+  hashPassword: vi.fn().mockImplementation(async (pwd: string) => `hashed_${pwd}`),
+  verifyPassword: vi
+    .fn()
+    .mockImplementation(async ({ hash, password }: { hash: string; password: string }) => {
+      if (hash === 'hashed_password') {
+        return true;
+      }
+      return hash === `hashed_${password}` || hash === password;
+    }),
 }));
 
 vi.mock('@/lib/prisma', () => {
@@ -43,6 +52,12 @@ vi.mock('@/lib/prisma', () => {
       },
       session: {
         deleteMany: vi.fn(),
+      },
+      verification: {
+        findUnique: vi.fn(),
+        delete: vi.fn(),
+        deleteMany: vi.fn(),
+        create: vi.fn(),
       },
       $transaction: vi.fn(),
       $executeRaw: vi.fn(),
@@ -86,22 +101,17 @@ describe('Vault Server Actions', () => {
       vi.mocked(prisma.vaultItem.create).mockResolvedValueOnce({
         id: 'item_abc',
         userId: mockUser.id,
-        title: 'Netflix Account',
         ciphertext: 'base64ciphertext',
         iv: 'base64iv',
-        type: 'ACCOUNT',
         pinned: false,
-        url: null,
         encVersion: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
       } as VaultItem);
 
       const res = await createEncryptedVaultItem({
-        title: 'Netflix Account',
         ciphertext: 'base64ciphertext',
         iv: 'base64iv',
-        type: 'ACCOUNT',
         pinned: false,
       });
 
@@ -112,7 +122,8 @@ describe('Vault Server Actions', () => {
       expect(prisma.vaultItem.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           userId: mockUser.id,
-          title: 'Netflix Account',
+          ciphertext: 'base64ciphertext',
+          iv: 'base64iv',
         }),
       });
     });
@@ -121,10 +132,8 @@ describe('Vault Server Actions', () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(null);
 
       const res = await createEncryptedVaultItem({
-        title: 'Netflix Account',
         ciphertext: 'base64ciphertext',
         iv: 'base64iv',
-        type: 'ACCOUNT',
         pinned: false,
       });
 
@@ -134,14 +143,12 @@ describe('Vault Server Actions', () => {
       }
     });
 
-    it('harus menolak jika payload tidak valid (title kosong)', async () => {
+    it('harus menolak jika payload tidak valid (ciphertext kosong)', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
 
       const res = await createEncryptedVaultItem({
-        title: '',
-        ciphertext: 'base64ciphertext',
+        ciphertext: '',
         iv: 'base64iv',
-        type: 'ACCOUNT',
         pinned: false,
       });
 
@@ -159,10 +166,8 @@ describe('Vault Server Actions', () => {
       vi.mocked(prisma.vaultItem.updateMany).mockResolvedValueOnce({ count: 1 });
 
       const res = await updateEncryptedVaultItem('item_abc', {
-        title: 'Netflix Premium',
         ciphertext: 'newCiphertext',
         iv: 'newIv',
-        type: 'ACCOUNT',
         pinned: true,
       });
 
@@ -170,7 +175,6 @@ describe('Vault Server Actions', () => {
       expect(prisma.vaultItem.updateMany).toHaveBeenCalledWith({
         where: { id: 'item_abc', userId: mockUser.id },
         data: expect.objectContaining({
-          title: 'Netflix Premium',
           pinned: true,
         }),
       });
@@ -182,10 +186,8 @@ describe('Vault Server Actions', () => {
       vi.mocked(prisma.vaultItem.updateMany).mockResolvedValueOnce({ count: 0 });
 
       const res = await updateEncryptedVaultItem('nonexistent_id', {
-        title: 'Updated Title',
         ciphertext: 'cipher',
         iv: 'iv',
-        type: 'ACCOUNT',
         pinned: false,
       });
 
@@ -255,33 +257,42 @@ describe('Vault Server Actions', () => {
     it('harus berhasil menyimpan encryptedVaultKey untuk user yang aktif', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
 
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        userId: mockUser.id,
+        providerId: 'credential',
+        password: 'hashed_password',
+        accountId: 'acc_123',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
       vi.mocked(prisma.user.updateMany).mockResolvedValueOnce({ count: 1 });
 
-      const res = await saveEncryptedVaultKey('wrappedKey123', 'iv123');
+      const res = await saveEncryptedVaultKey(
+        'wrappedKey123',
+        'iv123',
+        'AccountPassword123!',
+        'verifier123',
+      );
       expect(res.success).toBe(true);
       expect(prisma.user.updateMany).toHaveBeenCalledWith({
         where: { id: mockUser.id, encryptedVaultKey: null },
         data: {
           encryptedVaultKey: 'wrappedKey123',
           encryptedVaultKeyIv: 'iv123',
+          vaultVerifier: 'hashed_verifier123',
         },
       });
     });
 
-    it('harus berhasil mengubah master password key di user settings dan merevoke sesi lain', async () => {
-      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
-
-      vi.mocked(prisma.$transaction).mockResolvedValueOnce([
-        {} as unknown as never,
-        { count: 2 } as unknown as never,
-      ]);
-
-      const res = await updateMasterPassword('newWrappedKey456', 'newIv456');
-      expect(res.success).toBe(true);
-      expect(prisma.$transaction).toHaveBeenCalled();
-    });
-
-    it('harus mereset master password dan menghapus seluruh isi vault setelah verifikasi password', async () => {
+    it('harus menolak saveEncryptedVaultKey jika kata sandi akun salah', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
 
       vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
@@ -300,14 +311,212 @@ describe('Vault Server Actions', () => {
         updatedAt: new Date(),
       });
 
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValueOnce(false);
+
+      const res = await saveEncryptedVaultKey(
+        'wrappedKey123',
+        'iv123',
+        'WrongAccountPassword!',
+        'verifier123',
+      );
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Incorrect account password');
+      }
+    });
+
+    it('harus berhasil mengubah master password key di user settings dan merevoke sesi lain', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        userId: mockUser.id,
+        providerId: 'credential',
+        password: 'hashed_password',
+        accountId: 'acc_123',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const authProof = Buffer.from('correct_proof').toString('base64');
+      const verifier = crypto
+        .createHash('sha256')
+        .update(Buffer.from(authProof, 'base64'))
+        .digest('base64');
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        vaultVerifier: verifier,
+      } as unknown as never);
+
+      vi.mocked(prisma.$transaction).mockResolvedValueOnce([
+        {} as unknown as never,
+        { count: 2 } as unknown as never,
+      ]);
+
+      const res = await updateMasterPassword(
+        'newWrappedKey456',
+        'newIv456',
+        'AccountPassword123!',
+        {
+          newVaultSalt: 'new_salt',
+          newVaultVerifier: 'new_verifier',
+          authProof,
+        },
+      );
+      expect(res.success).toBe(true);
+      expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('harus menolak updateMasterPassword jika authProof salah / verifikasi zero-knowledge gagal', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        userId: mockUser.id,
+        providerId: 'credential',
+        password: 'hashed_password',
+        accountId: 'acc_123',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const verifier = crypto
+        .createHash('sha256')
+        .update(Buffer.from('correct_proof'))
+        .digest('base64');
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        vaultVerifier: verifier,
+      } as unknown as never);
+
+      const wrongProof = Buffer.from('wrong_proof').toString('base64');
+
+      const res = await updateMasterPassword(
+        'newWrappedKey456',
+        'newIv456',
+        'AccountPassword123!',
+        {
+          newVaultSalt: 'new_salt',
+          newVaultVerifier: 'new_verifier',
+          authProof: wrongProof,
+        },
+      );
+
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Current master password verification failed');
+      }
+    });
+
+    it('harus menolak updateMasterPassword jika kata sandi akun salah', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        userId: mockUser.id,
+        providerId: 'credential',
+        password: 'hashed_password',
+        accountId: 'acc_123',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValueOnce(false);
+
+      const res = await updateMasterPassword(
+        'newWrappedKey456',
+        'newIv456',
+        'WrongAccountPassword!',
+        {
+          newVaultSalt: 'new_salt',
+          newVaultVerifier: 'new_verifier',
+        },
+      );
+
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Incorrect account password');
+      }
+    });
+
+    it('harus mereset master password dan menghapus seluruh isi vault via confirmResetMasterPassword dengan token valid', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.verification.findUnique).mockResolvedValueOnce({
+        id: 'reset-vault:valid_token_123',
+        identifier: `reset-vault:${mockUser.id}`,
+        value: 'valid_token_123',
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
       vi.mocked(prisma.$transaction).mockResolvedValueOnce([
         { count: 5 } as unknown as never,
         mockUser as unknown as never,
+        {} as unknown as never,
+        { count: 1 } as unknown as never,
       ]);
 
-      const res = await resetMasterPassword('correctPassword123!');
+      const res = await confirmResetMasterPassword('valid_token_123');
       expect(res.success).toBe(true);
       expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.verification.delete).toHaveBeenCalledWith({
+        where: { id: 'reset-vault:valid_token_123' },
+      });
+    });
+
+    it('harus menolak confirmResetMasterPassword jika token sudah kedaluwarsa atau tidak valid', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+
+      vi.mocked(prisma.verification.findUnique).mockResolvedValueOnce({
+        id: 'reset-vault:expired_token',
+        identifier: `reset-vault:${mockUser.id}`,
+        value: 'expired_token',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await confirmResetMasterPassword('expired_token');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toContain('expired');
+      }
+    });
+
+    it('harus menolak confirmResetMasterPassword jika email pengguna belum terverifikasi', async () => {
+      const unverifiedSession = {
+        ...mockSession,
+        user: { ...mockUser, emailVerified: false } as unknown as AuthUser,
+      };
+      vi.mocked(getServerSession).mockResolvedValueOnce(unverifiedSession);
+
+      const res = await confirmResetMasterPassword('valid_token_123');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Email verification required');
+      }
     });
   });
 });

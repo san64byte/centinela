@@ -1,11 +1,30 @@
-import { create } from 'zustand';
+'use client';
 
-interface SignOutState {
-  isSignOut: boolean;
-  setSignOut: (value: boolean) => void;
+import { useSyncExternalStore } from 'react';
+
+let isSigningOut = false;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((listener) => listener());
 }
 
-export const useSignOutState = create<SignOutState>((set) => ({
-  isSignOut: false,
-  setSignOut: (value) => set({ isSignOut: value }),
-}));
+export function setSignOut(value: boolean) {
+  if (isSigningOut !== value) {
+    isSigningOut = value;
+    notify();
+  }
+}
+
+export function useSignOutState() {
+  return useSyncExternalStore(
+    (callback) => {
+      listeners.add(callback);
+      return () => {
+        listeners.delete(callback);
+      };
+    },
+    () => isSigningOut,
+    () => false,
+  );
+}

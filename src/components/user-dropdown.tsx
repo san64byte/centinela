@@ -18,9 +18,9 @@ import { Loader2, LogOut, Moon, Settings, Sun, SunMoon, UserRound, Vault } from 
 import { authClient } from '@/lib/auth-client';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { User } from '@/lib/auth';
+import type { User } from '@/lib/auth';
 import { useVaultKey } from '@/hooks/use-vault-key';
-import { useSignOutState } from '@/hooks/use-signout';
+import { setSignOut, useSignOutState } from '@/hooks/use-signout';
 import { useTheme } from 'next-themes';
 
 export default function UserDropdown({ user }: { user: User }) {
@@ -28,8 +28,7 @@ export default function UserDropdown({ user }: { user: User }) {
   const router = useRouter();
   const { setTheme, theme } = useTheme();
 
-  const isSignOut = useSignOutState((s) => s.isSignOut);
-  const setSignOut = useSignOutState((s) => s.setSignOut);
+  const isSignOut = useSignOutState();
 
   async function handleLogout() {
     setSignOut(true);
@@ -40,6 +39,7 @@ export default function UserDropdown({ user }: { user: User }) {
           toast.success('Signed out successfully');
           lock();
           router.push('/login');
+          setTimeout(() => setSignOut(false), 500);
         },
         onError: (ctx) => {
           setSignOut(false);

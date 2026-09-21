@@ -3,11 +3,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import LoadingButton from '@/components/loading-button';
-import { withEmailSchema } from '@/schemas/auth-schema';
+import { changeEmailSchema } from '@/schemas/auth-schema';
 import { useAppForm } from '@/lib/form';
-import { Mail } from 'lucide-react';
 import { useState } from 'react';
+import { Mail } from 'lucide-react';
+import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
+import { verifyAccountPassword } from '@/actions/settings.action';
 
 export default function EmailForm({ currentEmail }: { currentEmail: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -16,22 +18,35 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
   const form = useAppForm({
     defaultValues: {
       email: '',
+      currentPassword: '',
     },
     validators: {
-      onChange: withEmailSchema,
-      onSubmit: withEmailSchema,
+      onChange: changeEmailSchema,
+      onSubmit: changeEmailSchema,
     },
     onSubmit: async ({ value }) => {
       setError(null);
+      setStatus(null);
+
+      const verifyRes = await verifyAccountPassword(value.currentPassword);
+      if (!verifyRes.success) {
+        setError(verifyRes.error || 'Incorrect account password');
+        return;
+      }
 
       await authClient.changeEmail(
         {
           newEmail: value.email,
-          callbackURL: '/settings',
+          callbackURL: '/email-change-approved',
         },
         {
           onSuccess: () => {
-            setStatus('Verification email sent to your current address');
+            const targetEmail = value.email;
+            setStatus(
+              `Step 1 of 2 sent! Please check your current inbox (${currentEmail}) to approve the request. Once approved, an activation link will be sent to ${targetEmail}.`,
+            );
+            toast.success('Approval email sent to your current address.');
+            form.reset();
           },
           onError: (ctx) => {
             setError(ctx.error.message || 'Failed to initiate email change');
@@ -47,7 +62,8 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
         <CardTitle className="font-semibold">Email Address</CardTitle>
         <CardDescription>
           Manage the email address associated with your account. Changing your email requires
-          verification.
+          two-step verification: approval from your current email, followed by activation from your
+          new email.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -80,12 +96,30 @@ export default function EmailForm({ currentEmail }: { currentEmail: string }) {
               )}
             </form.AppField>
 
-            {status && <p className="text-sm text-green-600">{status}</p>}
+            <form.AppField name="currentPassword">
+              {(field) => (
+                <field.PasswordField
+                  label="Current Password"
+                  placeholder="Enter your account password"
+                  description="Required to confirm your identity before requesting email change."
+                />
+              )}
+            </form.AppField>
+
+            {status && (
+              <div className="rounded-lg border border-primary/20 bg-primary/10 p-3 text-xs leading-relaxed text-primary">
+                <p className="font-medium">{status}</p>
+              </div>
+            )}
 
             <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>
               {([isSubmitting, canSubmit]) => (
                 <Field orientation="horizontal">
-                  <LoadingButton loading={isSubmitting} disabled={!canSubmit} type="submit">
+                  <LoadingButton
+                    loading={isSubmitting}
+                    disabled={!canSubmit || isSubmitting}
+                    type="submit"
+                  >
                     Save changes
                   </LoadingButton>
                 </Field>

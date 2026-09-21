@@ -21,7 +21,7 @@ type UsernameCheckState = {
   available: boolean | null;
   checkError: string | null;
   checkUsername: (value: string) => void;
-  setUsernameTouched: (touched: boolean) => void;
+  setUsernameTouched?: (touched: boolean) => void;
 };
 
 export function TextField({
@@ -31,6 +31,7 @@ export function TextField({
   dataVariantGroup,
   description,
   others,
+  onChange,
   ...inputProps
 }: {
   label: string;
@@ -42,8 +43,25 @@ export function TextField({
 } & React.ComponentProps<typeof Input>) {
   const field = useFieldContext<string>();
   const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-  const { checking, available, checkError, checkUsername, setUsernameTouched } =
-    dataVariantGroup ?? ({} as UsernameCheckState);
+  const isGroup = variant === 'group';
+  const isFormSubmitting = Boolean(field.form?.state?.isSubmitting);
+  const isChecking =
+    isGroup &&
+    !isFormSubmitting &&
+    (field.state.meta.isValidating || Boolean(dataVariantGroup?.checking));
+
+  const hasValue = Boolean(field.state.value && field.state.value.trim().length > 0);
+  const isAvailable =
+    isGroup &&
+    (dataVariantGroup
+      ? dataVariantGroup.available === true
+      : hasValue && !isChecking && field.state.meta.isValid && field.state.meta.isDirty);
+
+  const isTaken =
+    isGroup &&
+    (dataVariantGroup
+      ? dataVariantGroup.available === false
+      : hasValue && !isChecking && !field.state.meta.isValid);
 
   return (
     <Field data-invalid={isInvalid} className="text-start">
@@ -57,7 +75,13 @@ export function TextField({
           name={field.name}
           value={field.state.value}
           onBlur={field.handleBlur}
-          onChange={(e) => field.handleChange(e.target.value)}
+          onChange={(e) => {
+            if (onChange) {
+              onChange(e);
+            } else {
+              field.handleChange(e.target.value);
+            }
+          }}
           {...inputProps}
         />
       ) : (
@@ -68,30 +92,38 @@ export function TextField({
             value={field.state.value}
             onBlur={field.handleBlur}
             onChange={(e) => {
-              setUsernameTouched(true);
-              field.handleChange(e.target.value);
-              checkUsername(e.target.value);
+              if (onChange) {
+                onChange(e);
+              } else {
+                field.handleChange(e.target.value);
+              }
+              dataVariantGroup?.setUsernameTouched?.(true);
+              dataVariantGroup?.checkUsername(e.target.value);
             }}
             autoComplete="username"
             {...inputProps}
           />
           <InputGroupAddon align="inline-end">
-            {checking && <Spinner />}
-            {!checking && available === true && <Check className="text-green-800" />}
-            {!checking && available === false && <X className="text-destructive" />}
+            {isChecking && <Spinner />}
+            {!isChecking && isAvailable && <Check className="text-green-800" />}
+            {!isChecking && isTaken && <X className="text-destructive" />}
           </InputGroupAddon>
         </InputGroup>
       )}
       {description && <FieldDescription>{description}</FieldDescription>}
       {others}
       {isInvalid && <FieldError errors={field.state.meta.errors} />}
-      {!checking && available === true && (
+      {isGroup && !isChecking && isAvailable && (
         <FieldDescription className="text-green-800">Username is available</FieldDescription>
       )}
-      {!checking && available === false && (
+      {isGroup && dataVariantGroup?.available === false && !isInvalid && (
         <FieldDescription className="text-destructive">Username is already taken</FieldDescription>
       )}
-      {checkError && <FieldDescription className="text-destructive">{checkError}</FieldDescription>}
+      {isGroup && dataVariantGroup?.checkError && (
+        <FieldDescription className="text-destructive">
+          {dataVariantGroup.checkError}
+        </FieldDescription>
+      )}
     </Field>
   );
 }

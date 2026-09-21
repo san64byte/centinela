@@ -12,11 +12,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum VaultItemType {
-  ACCOUNT
-  NOTE
-}
-
 model User {
   id              String   @id
   name            String
@@ -29,6 +24,7 @@ model User {
   displayUsername String?
 
   vaultSalt           String
+  vaultVerifier       String?
   encryptedVaultKey   String?
   encryptedVaultKeyIv String?
   vaultItems          VaultItem[]
@@ -46,10 +42,7 @@ model VaultItem {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  type   VaultItemType @default(ACCOUNT)
-  title  String
-  url    String?
-  pinned Boolean       @default(false)
+  pinned Boolean @default(false)
 
   ciphertext String
   iv         String
@@ -59,7 +52,6 @@ model VaultItem {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
-  @@index([userId, type])
   @@map("vault")
 }
 

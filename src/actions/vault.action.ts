@@ -1,23 +1,13 @@
 'use server';
 
-import { getServerSession } from '@/lib/get-session';
 import prisma from '@/lib/prisma';
+import { requireAuthUser } from '@/lib/server-auth';
 import { ActionResponse } from '@/types/action-type';
 import { revalidatePath } from 'next/cache';
 import * as z from 'zod';
 
 const encryptedVaultItemSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required').max(100),
-  url: z
-    .string()
-    .trim()
-    .max(2048, 'URL exceeds maximum length')
-    .refine((val) => !val || /^https?:\/\//i.test(val), {
-      message: 'URL must start with http:// or https://',
-    })
-    .nullish(),
   pinned: z.boolean().default(false),
-  type: z.enum(['ACCOUNT', 'NOTE']),
   ciphertext: z
     .string()
     .min(1, 'Ciphertext is required')
@@ -25,19 +15,24 @@ const encryptedVaultItemSchema = z.object({
   iv: z.string().min(1, 'IV is required').max(128, 'IV exceeds maximum size'),
 });
 
-export type EncryptedVaultItemInput = z.infer<typeof encryptedVaultItemSchema>;
+const togglePinSchema = z.object({
+  id: z.string().trim().min(1, 'Item ID is required').max(128),
+  pinned: z.boolean(),
+});
+
+const deleteVaultItemSchema = z.object({
+  id: z.string().trim().min(1, 'Item ID is required').max(128, 'Item ID exceeds maximum size'),
+});
+
+export type EncryptedVaultItemInput = z.input<typeof encryptedVaultItemSchema>;
 
 export const createEncryptedVaultItem = async (
   vaultItem: EncryptedVaultItemInput,
 ): Promise<ActionResponse<{ id: string }>> => {
   try {
-    const session = await getServerSession();
-    if (!session?.user) {
-      return { success: false, error: 'Unauthorized' };
-    }
-
-    if (!session.user.emailVerified) {
-      return { success: false, error: 'Email verification required' };
+    const auth = await requireAuthUser();
+    if (!auth.success) {
+      return { success: false, error: auth.error };
     }
 
     const parsed = encryptedVaultItemSchema.safeParse(vaultItem);
@@ -46,7 +41,12 @@ export const createEncryptedVaultItem = async (
     }
 
     const created = await prisma.vaultItem.create({
-      data: { ...parsed.data, userId: session.user.id },
+      data: {
+        pinned: parsed.data.pinned,
+        ciphertext: parsed.data.ciphertext,
+        iv: parsed.data.iv,
+        userId: auth.user.id,
+      },
     });
 
     revalidatePath('/vault');
@@ -62,13 +62,13 @@ export const updateEncryptedVaultItem = async (
   vaultItem: EncryptedVaultItemInput,
 ): Promise<ActionResponse> => {
   try {
-    const session = await getServerSession();
-    if (!session?.user || !itemId) {
+    if (!itemId) {
       return { success: false, error: 'Unauthorized' };
     }
 
-    if (!session.user.emailVerified) {
-      return { success: false, error: 'Email verification required' };
+    const auth = await requireAuthUser();
+    if (!auth.success) {
+      return { success: false, error: auth.error };
     }
 
     const parsed = encryptedVaultItemSchema.safeParse(vaultItem);
@@ -77,8 +77,13 @@ export const updateEncryptedVaultItem = async (
     }
 
     const result = await prisma.vaultItem.updateMany({
-      where: { id: itemId, userId: session.user.id },
-      data: { ...parsed.data, updatedAt: new Date() },
+      where: { id: itemId, userId: auth.user.id },
+      data: {
+        pinned: parsed.data.pinned,
+        ciphertext: parsed.data.ciphertext,
+        iv: parsed.data.iv,
+        updatedAt: new Date(),
+      },
     });
 
     if (result.count === 0) {
@@ -95,17 +100,18 @@ export const updateEncryptedVaultItem = async (
 
 export const deleteVaultItem = async (id: string): Promise<ActionResponse> => {
   try {
-    const session = await getServerSession();
-    if (!session?.user || !id) {
-      return { success: false, error: 'Unauthorized' };
+    const auth = await requireAuthUser();
+    if (!auth.success) {
+      return { success: false, error: auth.error };
     }
 
-    if (!session.user.emailVerified) {
-      return { success: false, error: 'Email verification required' };
+    const parsed = deleteVaultItemSchema.safeParse({ id });
+    if (!parsed.success) {
+      return { success: false, error: 'Invalid vault item ID' };
     }
 
     const result = await prisma.vaultItem.deleteMany({
-      where: { id, userId: session.user.id },
+      where: { id: parsed.data.id, userId: auth.user.id },
     });
 
     if (result.count === 0) {
@@ -122,19 +128,20 @@ export const deleteVaultItem = async (id: string): Promise<ActionResponse> => {
 
 export const toggleVaultItemPin = async (id: string, pinned: boolean): Promise<ActionResponse> => {
   try {
-    const session = await getServerSession();
-    if (!session?.user || !id) {
-      return { success: false, error: 'Unauthorized' };
+    const auth = await requireAuthUser();
+    if (!auth.success) {
+      return { success: false, error: auth.error };
     }
 
-    if (!session.user.emailVerified) {
-      return { success: false, error: 'Email verification required' };
+    const parsed = togglePinSchema.safeParse({ id, pinned });
+    if (!parsed.success) {
+      return { success: false, error: 'Invalid pin payload' };
     }
 
     const rowsAffected = await prisma.$executeRaw`
       UPDATE "vault"
-      SET "pinned" = ${pinned}
-      WHERE "id" = ${id} AND "userId" = ${session.user.id}
+      SET "pinned" = ${parsed.data.pinned}
+      WHERE "id" = ${parsed.data.id} AND "userId" = ${auth.user.id}
     `;
 
     if (rowsAffected === 0) {

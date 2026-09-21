@@ -53,11 +53,41 @@ export async function wrapVaultKey(
   };
 }
 
+export async function deriveMasterPasswordVerifier(
+  masterPassword: string,
+  salt: string,
+): Promise<{ authProof: string; verifier: string }> {
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(masterPassword),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+
+  const authBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: new TextEncoder().encode(`centinela-auth-verifier:${salt}`),
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    passwordKey,
+    256,
+  );
+
+  const authProof = bufferToBase64(authBits);
+  const verifierBuffer = await crypto.subtle.digest('SHA-256', authBits);
+  const verifier = bufferToBase64(verifierBuffer);
+
+  return { authProof, verifier };
+}
+
 export async function unwrapVaultKey(
   wrappedKeyBase64: string,
   ivBase64: string,
   masterKey: CryptoKey,
-  extractable: boolean = true,
+  extractable: boolean = false,
 ): Promise<CryptoKey> {
   return crypto.subtle.unwrapKey(
     'raw',
@@ -75,4 +105,19 @@ export async function rewrapVaultKey(
   newMasterKey: CryptoKey,
 ): Promise<{ wrappedKey: string; iv: string }> {
   return wrapVaultKey(vaultKey, newMasterKey);
+}
+
+/**
+ * Unwraps the vault key directly from the master password and salt.
+ * Combines PBKDF2 master key derivation and AES-GCM unwrap.
+ */
+export async function unlockVaultKey(
+  masterPassword: string,
+  vaultSaltBase64: string,
+  wrappedKeyBase64: string,
+  ivBase64: string,
+  extractable: boolean = false,
+): Promise<CryptoKey> {
+  const masterKey = await deriveMasterKey(masterPassword, vaultSaltBase64);
+  return unwrapVaultKey(wrappedKeyBase64, ivBase64, masterKey, extractable);
 }

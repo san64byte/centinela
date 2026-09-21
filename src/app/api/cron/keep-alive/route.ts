@@ -19,12 +19,10 @@ export async function GET(request: NextRequest) {
   const expectedAuth = `Bearer ${cronSecret}`;
   const providedAuth = authHeader || '';
 
-  const expectedBuffer = Buffer.from(expectedAuth);
-  const providedBuffer = Buffer.from(providedAuth);
+  const expectedHash = crypto.createHash('sha256').update(expectedAuth).digest();
+  const providedHash = crypto.createHash('sha256').update(providedAuth).digest();
 
-  const isAuthorized =
-    expectedBuffer.length === providedBuffer.length &&
-    crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+  const isAuthorized = crypto.timingSafeEqual(expectedHash, providedHash);
 
   if (!isAuthorized) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

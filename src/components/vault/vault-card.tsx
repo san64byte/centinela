@@ -7,7 +7,6 @@ import { formatRelativeDate } from '@/lib/utils';
 interface VaultCardProps {
   vault: DecryptedVaultItem | null;
   onView: (vault: DecryptedVaultItem) => void;
-  onEdit?: (vault: DecryptedVaultItem) => void;
   onTogglePin: (vault: DecryptedVaultItem) => void;
 }
 
@@ -16,7 +15,7 @@ export default function VaultCard({ vault, onView, onTogglePin }: VaultCardProps
 
   const isAccount = vault.type === 'ACCOUNT';
   const identity = isAccount
-    ? vault.data.email || vault.data.username || vault.url || 'Credential Account'
+    ? vault.email || vault.username || vault.url || 'Credential Account'
     : 'Secret Note';
 
   return (
@@ -48,9 +47,9 @@ export default function VaultCard({ vault, onView, onTogglePin }: VaultCardProps
             <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs font-normal text-muted-foreground">
               {isAccount ? (
                 <>
-                  {vault.data.email ? (
+                  {vault.email ? (
                     <Mail className="size-3 shrink-0 text-muted-foreground/70" />
-                  ) : vault.data.username ? (
+                  ) : vault.username ? (
                     <UserRound className="size-3 shrink-0 text-muted-foreground/70" />
                   ) : vault.url ? (
                     <Globe className="size-3 shrink-0 text-muted-foreground/70" />

@@ -1,24 +1,19 @@
 'use client';
 
+import LoadingButton from '@/components/loading-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
-import { updateProfileDetailSchema } from '@/schemas/auth-schema';
-import LoadingButton from '@/components/loading-button';
-import { User } from '@/lib/auth';
-import { useAppForm } from '@/lib/form';
-import { useUsernameAvailability } from '@/hooks/use-username-availability';
-import { useState } from 'react';
-import isEqual from 'lodash.isequal';
-import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
+import { useAppForm } from '@/lib/form';
+import { updateProfileDetailSchema, usernameSchema } from '@/schemas/auth-schema';
+import type { User } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
+import { useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 export default function BasicInformationForm({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
-  const [, setUsernameTouched] = useState(false);
-  const { checking, available, checkError, checkUsername } = useUsernameAvailability({
-    originalUsername: user.username!,
-  });
+  const lastCheckedUsername = useRef<{ username: string; isAvailable: boolean } | null>(null);
   const { refetch } = authClient.useSession();
   const router = useRouter();
 
@@ -40,7 +35,7 @@ export default function BasicInformationForm({ user }: { user: User }) {
         username: user.username,
       });
 
-      if (isEqual(parsed, originalValues)) {
+      if (parsed.name === originalValues.name && parsed.username === originalValues.username) {
         toast.info('No changes to save');
         return;
       }
@@ -87,31 +82,44 @@ export default function BasicInformationForm({ user }: { user: User }) {
               {(field) => <field.TextField label="Full Name" placeholder="e.g. John Doe" />}
             </form.AppField>
 
-            <form.AppField name="username">
+            <form.AppField
+              name="username"
+              asyncDebounceMs={400}
+              validators={{
+                onChangeAsync: async ({ value }) => {
+                  if (!value || value === user.username) return undefined;
+                  const result = usernameSchema.safeParse(value);
+                  if (!result.success) return undefined;
+
+                  if (lastCheckedUsername.current?.username === value) {
+                    return lastCheckedUsername.current.isAvailable
+                      ? undefined
+                      : 'Username is already taken';
+                  }
+
+                  try {
+                    const res = await authClient.isUsernameAvailable({ username: value });
+                    const isAvailable = res.data?.available !== false;
+                    lastCheckedUsername.current = { username: value, isAvailable };
+                    if (!isAvailable) {
+                      return 'Username is already taken';
+                    }
+                  } catch {
+                    return 'Failed to check username availability';
+                  }
+                  return undefined;
+                },
+              }}
+            >
               {(field) => (
-                <field.TextField
-                  label="Username"
-                  variant="group"
-                  dataVariantGroup={{
-                    checking,
-                    available,
-                    checkError,
-                    checkUsername,
-                    setUsernameTouched,
-                  }}
-                  placeholder="e.g. johndoe"
-                />
+                <field.TextField label="Username" variant="group" placeholder="e.g. johndoe" />
               )}
             </form.AppField>
 
             <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>
               {([isSubmitting, canSubmit]) => (
                 <Field orientation="horizontal">
-                  <LoadingButton
-                    loading={isSubmitting}
-                    disabled={!canSubmit || checking}
-                    type="submit"
-                  >
+                  <LoadingButton loading={isSubmitting} disabled={!canSubmit} type="submit">
                     Save changes
                   </LoadingButton>
                 </Field>

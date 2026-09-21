@@ -1,13 +1,12 @@
 'use client';
 
-import { InputPassword } from '@/components/input-password';
 import LoadingButton from '@/components/loading-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { useVaultKey } from '@/hooks/use-vault-key';
-import { User } from '@/lib/auth';
+import type { User } from '@/lib/auth';
 import { unlockVaultSchema } from '@/schemas/vault-schema';
-import { useForm } from '@tanstack/react-form';
+import { useAppForm } from '@/lib/form';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { LockKeyhole } from 'lucide-react';
@@ -16,7 +15,7 @@ export default function UnlockVault({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
   const { unlock } = useVaultKey();
 
-  const form = useForm({
+  const form = useAppForm({
     defaultValues: {
       masterPassword: '',
     },
@@ -68,29 +67,19 @@ export default function UnlockVault({ user }: { user: User }) {
             <FieldGroup>
               {error && <FieldError>{error}</FieldError>}
 
-              <form.Field name="masterPassword">
-                {(field) => {
-                  const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                  return (
-                    <Field data-invalid={isInvalid} className="text-start">
-                      <FieldLabel htmlFor={field.name}>Master Password</FieldLabel>
-                      <InputPassword
-                        id={field.name}
-                        name={field.name}
-                        value={field.state.value}
-                        onBlur={field.handleBlur}
-                        onChange={(e) => {
-                          field.handleChange(e.target.value);
-                          if (error) setError(null);
-                        }}
-                        placeholder="Enter your master password"
-                        autoFocus
-                      />
-                      {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                    </Field>
-                  );
-                }}
-              </form.Field>
+              <form.AppField name="masterPassword">
+                {(field) => (
+                  <field.PasswordField
+                    label="Master Password"
+                    placeholder="Enter your master password"
+                    onChange={(e) => {
+                      field.handleChange(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    autoFocus
+                  />
+                )}
+              </form.AppField>
 
               <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>
                 {([isSubmitting, canSubmit]) => (

@@ -1,4 +1,6 @@
-import { base64ToBuffer, bufferToBase64, generateIv } from './encoding';
+import { base64ToBuffer, bufferToBase64, generateIvBytes } from './encoding';
+import type { DecryptedVaultItem, EncryptedVaultPayload } from '@/types/vault-type';
+import type { VaultItem as PrismaVaultItem } from '@/lib/generated/prisma/client';
 
 export interface EncryptedPayload {
   ciphertext: string;
@@ -8,8 +10,7 @@ export interface EncryptedPayload {
 export async function encryptData<T>(data: T, vaultKey: CryptoKey): Promise<EncryptedPayload> {
   const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
 
-  const ivBase64 = generateIv();
-  const iv = base64ToBuffer(ivBase64);
+  const iv = generateIvBytes();
 
   const ciphertextBuffer = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
@@ -19,7 +20,7 @@ export async function encryptData<T>(data: T, vaultKey: CryptoKey): Promise<Encr
 
   return {
     ciphertext: bufferToBase64(ciphertextBuffer),
-    iv: ivBase64,
+    iv: bufferToBase64(iv),
   };
 }
 
@@ -40,4 +41,27 @@ export async function decryptData<T = string>(
   } catch {
     return plaintext as unknown as T;
   }
+}
+
+/**
+ * Decrypts a single Prisma VaultItem record into a DecryptedVaultItem.
+ */
+export async function decryptVaultItem(
+  item: PrismaVaultItem,
+  vaultKey: CryptoKey,
+): Promise<DecryptedVaultItem> {
+  const decrypted = await decryptData<EncryptedVaultPayload>(
+    { ciphertext: item.ciphertext, iv: item.iv },
+    vaultKey,
+  );
+
+  return {
+    id: item.id,
+    userId: item.userId,
+    pinned: item.pinned,
+    encVersion: item.encVersion,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    ...decrypted,
+  } as DecryptedVaultItem;
 }

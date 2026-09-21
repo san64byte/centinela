@@ -4,7 +4,7 @@ import { useSignOutState } from '@/hooks/use-signout';
 import { LoaderIcon } from 'lucide-react';
 
 export function SignOutOverlay() {
-  const isSigningOut = useSignOutState((s) => s.isSignOut);
+  const isSigningOut = useSignOutState();
   if (!isSigningOut) return null;
 
   return (

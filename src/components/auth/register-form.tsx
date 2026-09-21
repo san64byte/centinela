@@ -1,25 +1,20 @@
 'use client';
 
 import LoadingButton from '@/components/loading-button';
-import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field';
-import { useUsernameAvailability } from '@/hooks/use-username-availability';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
 import { cn, slugifyUsername } from '@/lib/utils';
-import { registerSchema } from '@/schemas/auth-schema';
-import { Sparkles } from 'lucide-react';
+import { registerSchema, usernameSchema } from '@/schemas/auth-schema';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import PasswordGenerator from '@/components/password-generator';
 
 export default function RegisterForm({ className, ...props }: React.ComponentProps<'form'>) {
   const [error, setError] = useState<string | null>(null);
   const [usernameTouched, setUsernameTouched] = useState(false);
-  const [showGenerator, setShowGenerator] = useState(false);
-  const { checking, available, checkError, checkUsername } = useUsernameAvailability();
+  const lastCheckedUsername = useRef<{ username: string; isAvailable: boolean } | null>(null);
   const router = useRouter();
 
   const form = useAppForm({
@@ -47,14 +42,6 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
         {
           onSuccess: () => {
             toast.success('Account registered successfully');
-            try {
-              localStorage.setItem(
-                `verify_email_cooldown_${value.email.toLowerCase()}`,
-                Date.now().toString(),
-              );
-            } catch {
-              // Ignore storage errors if private browsing restricts localStorage
-            }
             router.push(`/verify-email?email=${encodeURIComponent(value.email)}`);
           },
           onError: (ctx) => {
@@ -90,26 +77,50 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
                 if (!usernameTouched) {
                   const slug = slugifyUsername(value);
                   form.setFieldValue('username', slug);
-                  checkUsername(slug);
                 }
               }}
             />
           )}
         </form.AppField>
 
-        <form.AppField name="username">
+        <form.AppField
+          name="username"
+          asyncDebounceMs={400}
+          validators={{
+            onChangeAsync: async ({ value }) => {
+              if (!value) return undefined;
+              const result = usernameSchema.safeParse(value);
+              if (!result.success) return undefined;
+
+              if (lastCheckedUsername.current?.username === value) {
+                return lastCheckedUsername.current.isAvailable
+                  ? undefined
+                  : 'Username is already taken';
+              }
+
+              try {
+                const res = await authClient.isUsernameAvailable({ username: value });
+                const isAvailable = res.data?.available !== false;
+                lastCheckedUsername.current = { username: value, isAvailable };
+                if (!isAvailable) {
+                  return 'Username is already taken';
+                }
+              } catch {
+                return 'Failed to check username availability';
+              }
+              return undefined;
+            },
+          }}
+        >
           {(field) => (
             <field.TextField
               label="Username"
               variant="group"
-              dataVariantGroup={{
-                checking,
-                available,
-                checkError,
-                checkUsername,
-                setUsernameTouched,
-              }}
               placeholder="e.g. alex_morgan"
+              onChange={(e) => {
+                setUsernameTouched(true);
+                field.handleChange(e.target.value);
+              }}
             />
           )}
         </form.AppField>
@@ -120,45 +131,14 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
 
         <form.AppField name="password">
           {(field) => (
-            <field.PasswordField
-              label="Password"
-              placeholder="Create a strong password"
-              labelSlot={
-                <div className="ml-auto">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setShowGenerator((prev) => !prev)}
-                    className="h-6 gap-1.5 rounded-md px-2 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Sparkles className="size-3 text-primary" />
-                    <span>{showGenerator ? 'Hide generator' : 'Generate password'}</span>
-                  </Button>
-                </div>
-              }
-            >
-              {showGenerator && (
-                <PasswordGenerator
-                  onApply={(pwd: string) => {
-                    field.handleChange(pwd);
-                    setShowGenerator(false);
-                  }}
-                  onClose={() => setShowGenerator(false)}
-                />
-              )}
-            </field.PasswordField>
+            <field.PasswordField label="Password" placeholder="Create a strong password" />
           )}
         </form.AppField>
 
         <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>
           {([isSubmitting, canSubmit]) => (
             <Field>
-              <LoadingButton
-                loading={isSubmitting}
-                disabled={!canSubmit || available !== true}
-                type="submit"
-              >
+              <LoadingButton loading={isSubmitting} disabled={!canSubmit} type="submit">
                 Register
               </LoadingButton>
             </Field>

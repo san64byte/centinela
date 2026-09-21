@@ -66,13 +66,22 @@ export default function VaultDetail({
 
       if (isSecret) {
         setTimeout(async () => {
-          try {
-            const current = await navigator.clipboard.readText();
-            if (current === text) {
+          const clearClipboard = async () => {
+            try {
               await navigator.clipboard.writeText('');
+            } catch {
+              // Safely ignore clipboard write errors
             }
-          } catch {
-            // Reading clipboard may fail if window is out of focus; safely ignore
+          };
+
+          if (document.hasFocus()) {
+            await clearClipboard();
+          } else {
+            const onFocus = async () => {
+              window.removeEventListener('focus', onFocus);
+              await clearClipboard();
+            };
+            window.addEventListener('focus', onFocus, { once: true });
           }
         }, 45000);
       }
@@ -214,40 +223,40 @@ export default function VaultDetail({
 
           {vault.type === 'ACCOUNT' && (
             <>
-              {renderField('Email', vault.data.email, { fieldName: 'email' })}
-              {renderField('Username / ID', vault.data.username, { fieldName: 'username' })}
-              {renderField('Password', vault.data.password, {
+              {renderField('Email', vault.email, { fieldName: 'email' })}
+              {renderField('Username / ID', vault.username, { fieldName: 'username' })}
+              {renderField('Password', vault.password, {
                 fieldName: 'password',
                 isSecret: true,
                 isRevealed: showPassword,
                 onToggleReveal: () => setShowPassword(!showPassword),
               })}
-              {renderField('Phone Number', vault.data.phone, { fieldName: 'phone' })}
-              {renderField('PIN', vault.data.pin, {
+              {renderField('Phone Number', vault.phone, { fieldName: 'phone' })}
+              {renderField('PIN', vault.pin, {
                 fieldName: 'pin',
                 isSecret: true,
                 isRevealed: showPin,
                 onToggleReveal: () => setShowPin(!showPin),
               })}
 
-              {vault.data.notes && (
+              {vault.notes && (
                 <Field className="space-y-1.5">
                   <span className="block text-xs font-medium tracking-wide text-muted-foreground/90">
                     Notes
                   </span>
                   <div className="rounded-lg border border-border/70 bg-muted/20 p-3.5 text-xs leading-relaxed font-normal wrap-break-word whitespace-pre-wrap text-foreground shadow-2xs">
-                    {vault.data.notes}
+                    {vault.notes}
                   </div>
                 </Field>
               )}
 
-              {vault.data.credentialHistory && vault.data.credentialHistory.length > 0 && (
+              {vault.credentialHistory && vault.credentialHistory.length > 0 && (
                 <Field className="space-y-2">
                   <span className="block text-xs font-medium tracking-wide text-muted-foreground/90">
                     Password History
                   </span>
                   <div className="space-y-2">
-                    {vault.data.credentialHistory
+                    {vault.credentialHistory
                       .sort(
                         (a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime(),
                       )
@@ -270,8 +279,9 @@ export default function VaultDetail({
                               <span className="font-mono text-xs font-medium break-all text-foreground">
                                 {isHistoryRevealed ? entry.value : '••••••••'}
                               </span>
-                              <div className="flex items-center gap-1">
+                              <div className="flex shrink-0 items-center gap-1">
                                 <Button
+                                  type="button"
                                   size="icon-xs"
                                   variant="ghost"
                                   onClick={() =>
@@ -280,8 +290,16 @@ export default function VaultDetail({
                                       [i]: !prev[i],
                                     }))
                                   }
-                                  aria-label={isHistoryRevealed ? 'Hide value' : 'Show value'}
-                                  title={isHistoryRevealed ? 'Hide value' : 'Show value'}
+                                  aria-label={
+                                    isHistoryRevealed
+                                      ? 'Hide historical password'
+                                      : 'Show historical password'
+                                  }
+                                  title={
+                                    isHistoryRevealed
+                                      ? 'Hide historical password'
+                                      : 'Show historical password'
+                                  }
                                   className="size-7 rounded-md text-muted-foreground shadow-2xs hover:bg-background hover:text-foreground"
                                 >
                                   {isHistoryRevealed ? (
@@ -291,6 +309,7 @@ export default function VaultDetail({
                                   )}
                                 </Button>
                                 <Button
+                                  type="button"
                                   size="icon-xs"
                                   variant="ghost"
                                   onClick={() => handleCopy(entry.value, `history-${i}`, true)}
@@ -316,13 +335,13 @@ export default function VaultDetail({
             </>
           )}
 
-          {vault.type === 'NOTE' && vault.data.content && (
+          {vault.type === 'NOTE' && vault.content && (
             <Field className="space-y-1.5">
               <span className="block text-xs font-medium tracking-wide text-muted-foreground/90">
                 Content
               </span>
-              <div className="rounded-lg border border-border/70 bg-muted/20 p-4 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-foreground shadow-2xs">
-                {vault.data.content}
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3.5 text-xs leading-relaxed font-normal wrap-break-word whitespace-pre-wrap text-foreground shadow-2xs">
+                {vault.content}
               </div>
             </Field>
           )}

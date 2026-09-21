@@ -1,21 +1,28 @@
 # 🔐 Centinela
 
-**Centinela** is a zero-knowledge password and secret manager built with **Next.js 16**, **React 19**, and the **Web Crypto API**. All sensitive credentials are encrypted and decrypted entirely client-side using **AES-256-GCM** before reaching the database. The server never sees your plaintext data or Master Password.
+**Centinela** is a modern zero-knowledge password and secret manager built with **Next.js 16**, **React 19**, and the **Web Crypto API**. All sensitive credentials and notes are encrypted and decrypted entirely client-side using **AES-256-GCM** before reaching the network or database. The server and PostgreSQL database only ever store ciphertext and initialization vectors (IVs) — never your plaintext credentials or Master Password.
 
 ---
 
 ## ✨ Features
 
-- **Zero-Knowledge Encryption** — Client-side encryption with **AES-256-GCM**; server only stores ciphertext and IVs.
-- **Envelope Encryption** — A dedicated `vaultKey` is wrapped by a PBKDF2-derived `masterKey` (600,000 iterations, OWASP recommended). Changing Master Passwords requires re-wrapping only the `vaultKey`, without re-encrypting vault items.
+- **Zero-Knowledge Encryption** — Client-side authenticated encryption using **AES-256-GCM**; the database and server never see plaintext credentials, PINs, or private notes.
+- **Envelope Encryption (Key Wrapping)** — A dedicated 256-bit random `vaultKey` is wrapped by a PBKDF2-derived `masterKey` (600,000 iterations, OWASP recommended). Changing Master Passwords only requires re-wrapping the `vaultKey`, without needing to re-encrypt vault items.
 - **Flexible Vault Items**:
-  - **Account**: Stores Email, **Username / ID** (accommodates usernames, member numbers, account IDs), optional Password/PIN, and secure notes.
-  - **Credential History**: Tracks password/PIN changes with individual delete controls and toggle to exclude accidental typos.
+  - **Account**: Supports multiple identifier types (Email, **Username / ID**, Phone Number), optional Password & PIN, and encrypted notes.
+  - **Credential History**: Automatically archives past passwords and PINs with individual delete controls and an opt-out toggle to avoid saving accidental typos.
   - **Note**: Secure markdown/text notes up to 10,000 characters.
-- **Built-in Password Generator** — Cryptographically secure (`crypto.getRandomValues`) generator with customizable length, character sets, and ambiguous character filtering.
-- **Independent Authentication** — User account sessions managed by **Better Auth** with email verification via **Resend**.
-- **In-Memory Security** — Encryption keys live strictly in browser memory and are flushed on page reload.
-- **Database Keep-Alive** — Automated GitHub Actions workflow to keep free-tier Supabase PostgreSQL active.
+- **Route Security Proxy** — Next.js 16 edge proxy (`src/proxy.ts`) guarding `/vault`, `/settings`, and `/setup-vault` routes, instantly intercepting unauthenticated traffic.
+- **Hardened HTTP Security Headers & CSP** — Strict Content Security Policy (CSP), HSTS (`max-age=63072000; includeSubDomains; preload`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and `Permissions-Policy`.
+- **Password Generator & Visual Strength Meter** — Cryptographically secure (`crypto.getRandomValues`) generator with configurable lengths, character sets, and ambiguous character filters, paired with a real-time 5-tier strength meter.
+- **Fail-Closed & Re-Authentication Safeguards** — Destructive vault reset requires account password verification (`better-auth/crypto`); automated cron endpoints enforce fail-closed constant-time authentication (`crypto.timingSafeEqual`).
+- **Resilient Decryption Pipeline** — Decryption runs via `Promise.allSettled`, isolating corrupted items so that accessible records remain decryptable and functional.
+- **Clipboard Auto-Clearing** — Automatic 45-second timer purges copied credentials and PINs from the operating system clipboard.
+- **Atomic Multi-Device Session Eviction** — Rotating or resetting the Master Password atomically invalidates all other active sessions across devices via `prisma.$transaction`.
+- **Independent Account Authentication** — User account lifecycle managed by **Better Auth** with email verification enforced across all vault mutations via **Resend**.
+- **In-Memory Key Lifetime** — Cryptographic keys reside exclusively in volatile browser RAM and are purged on page reload, lock, or logout.
+- **Database Keep-Alive & TLS Verification** — Automated Supabase keep-alive cron and standalone script with strict SSL/TLS certificate validation (`rejectUnauthorized: true`) and CA certificate support (`SUPABASE_SSL_CERT`).
+- **UI & Privacy Polish** — Sign-out privacy overlay to prevent visual flashing of decrypted secrets during route transitions, protected goodbye page, and System/Light/Dark theme support via `next-themes`.
 
 ---
 
@@ -23,17 +30,17 @@
 
 ```mermaid
 flowchart TD
-    subgraph Client["Client (Browser Memory)"]
+    subgraph Client["Client (Browser Memory & Web Crypto API)"]
         MP["Master Password"]
-        Salt["vaultSalt"]
-        PBKDF2["PBKDF2-SHA256 (600k iters)"]
-        MK["masterKey (AES-256-GCM)"]
+        Salt["vaultSalt (16 bytes random)"]
+        PBKDF2["PBKDF2-SHA256 (600,000 iters)"]
+        MK["masterKey (AES-256-GCM, Non-extractable)"]
         VK["vaultKey (256-bit random)"]
         ItemData["Plaintext Credentials / Note"]
-        CipherEngine["AES-GCM 256-bit Engine"]
+        CipherEngine["AES-GCM 256-bit Engine (12-byte IV)"]
     end
 
-    subgraph Server["Server & PostgreSQL (Prisma)"]
+    subgraph Server["Server & PostgreSQL (Prisma ORM v7)"]
         UserDB[("User Table\nvaultSalt, encryptedVaultKey, IV")]
         VaultDB[("VaultItem Table\nciphertext, iv, metadata")]
     end
@@ -49,15 +56,15 @@ flowchart TD
 
 ## 🧰 Tech Stack
 
-| Layer                  | Technology                                                                               |
-| :--------------------- | :--------------------------------------------------------------------------------------- |
-| **Framework**          | [Next.js 16](https://nextjs.org/) (App Router, Server Actions)                           |
-| **Frontend**           | React 19, Tailwind CSS v4, [shadcn/ui](https://ui.shadcn.com/)                           |
-| **Cryptography**       | Web Crypto API (`PBKDF2-SHA256`, `AES-256-GCM`, `crypto.getRandomValues`)                |
-| **Database & ORM**     | PostgreSQL ([Supabase](https://supabase.com/)) + [Prisma ORM v7](https://www.prisma.io/) |
-| **Authentication**     | [Better Auth](https://www.better-auth.com/) + [Resend](https://resend.com/)              |
-| **Forms & Validation** | [TanStack Form](https://tanstack.com/form) + [Zod](https://zod.dev/)                     |
-| **Testing**            | [Vitest](https://vitest.dev/)                                                            |
+| Layer                  | Technology                                                                                                                                                                  |
+| :--------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Framework**          | [Next.js 16](https://nextjs.org/) (App Router, Server Actions, Edge Route Proxy)                                                                                            |
+| **Frontend**           | [React 19](https://react.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [shadcn/ui](https://ui.shadcn.com/), [next-themes](https://github.com/pacocoursey/next-themes) |
+| **Cryptography**       | W3C Web Crypto API (`PBKDF2-HMAC-SHA256`, `AES-256-GCM`, `crypto.getRandomValues`)                                                                                          |
+| **Database & ORM**     | PostgreSQL ([Supabase](https://supabase.com/)) + [Prisma ORM v7](https://www.prisma.io/)                                                                                    |
+| **Authentication**     | [Better Auth](https://www.better-auth.com/) + [Resend](https://resend.com/) (Transactional Emails)                                                                          |
+| **Forms & Validation** | [TanStack Form](https://tanstack.com/form) + [Zod](https://zod.dev/)                                                                                                        |
+| **Testing**            | [Vitest](https://vitest.dev/)                                                                                                                                               |
 
 ---
 
@@ -67,7 +74,7 @@ flowchart TD
 
 - **Node.js** >= 20 (recommended: Node 24)
 - PostgreSQL database (e.g. [Supabase](https://supabase.com/))
-- [Resend](https://resend.com/) account for verification emails
+- [Resend](https://resend.com/) account for transactional verification emails
 
 ### 2. Installation
 
@@ -87,12 +94,15 @@ RESEND_API_KEY="re_xxxxxxxxxxxx"
 BETTER_AUTH_SECRET="your-32-character-random-secret"
 BETTER_AUTH_URL="http://localhost:3000"
 CRON_SECRET="your-cron-secret-key"
+
+# Optional: Custom CA certificate for Supabase SSL/TLS keep-alive
+# SUPABASE_SSL_CERT="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
 ```
 
 ### 4. Database Setup & Run
 
 ```bash
-# Push migrations and generate client
+# Push migrations and generate Prisma client
 npx prisma generate
 npx prisma migrate dev
 
@@ -100,7 +110,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to open the application.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
@@ -108,22 +118,26 @@ Visit [http://localhost:3000](http://localhost:3000) to open the application.
 
 - `npm run dev` — Starts Next.js development server.
 - `npm run build` — Lints code and builds production bundle.
+- `npm run build:clean` — Cleans `.next` build cache and builds production bundle.
+- `npm run start` — Starts production server.
 - `npm run test` — Runs test suite with Vitest.
-- `npm run test:watch` — Runs tests in watch mode.
+- `npm run test:watch` — Runs test suite in interactive watch mode.
 - `npm run lint` — Runs ESLint checks.
-- `npm run format:check` — Checks code formatting with Prettier.
+- `npm run lint:fix` — Automatically fixes ESLint warnings and errors where possible.
 - `npm run format` — Formats all files with Prettier.
-- `npm run db:keep-alive` — Executes keep-alive ping query to Supabase.
+- `npm run format:check` — Checks code formatting against Prettier rules.
+- `npm run db:keep-alive` — Executes keep-alive ping query to Supabase with TLS certificate validation.
 
 ---
 
 ## 🔒 Security Principles
 
-1. **Zero Knowledge**: The server and database never receive plaintext credentials, notes, or the Master Password.
-2. **Key Isolation**: Master Password derivation key (`masterKey`) never encrypts items directly; it only wraps the random `vaultKey`.
-3. **OWASP Compliance**: Key derivation uses PBKDF2 with SHA-256 and 600,000 iterations.
-4. **Authenticity Verification**: AES-256-GCM authentication tags prevent tampering; any incorrect key or corrupted ciphertext results in immediate decryption failure.
-5. **No Local Persistence**: Neither `masterKey` nor `vaultKey` is ever stored in `localStorage` or `sessionStorage`.
+1. **True Zero Knowledge**: The server and database never receive plaintext credentials, notes, or the Master Password.
+2. **Key Isolation**: Derivation keys (`masterKey`) never encrypt vault items directly; they only wrap the random `vaultKey`.
+3. **OWASP Compliance**: Key derivation utilizes PBKDF2 with SHA-256 and 600,000 iterations.
+4. **Authenticity Verification**: AES-256-GCM 128-bit authentication tags prevent tampering; any incorrect key or tampered ciphertext causes immediate decryption rejection.
+5. **No Local Persistence**: Neither `masterKey` nor `vaultKey` is ever written to `localStorage`, `sessionStorage`, or `IndexedDB`.
+6. **Ephemeral Memory & Clipboard Hygiene**: Sensitive keys are purged on reload/lock, and copied secrets are automatically removed from the system clipboard after 45 seconds.
 
 ---
 

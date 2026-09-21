@@ -13,19 +13,23 @@ import {
 import { Field, FieldGroup } from '@/components/ui/field';
 import LoadingButton from '@/components/loading-button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CredentialHistoryEntry, DecryptedVaultItem, VaultItemFormInput } from '@/types/vault-type';
+import {
+  CredentialHistoryEntry,
+  DecryptedVaultItem,
+  EncryptedVaultPayload,
+  VaultItemFormInput,
+  VaultItemType,
+} from '@/types/vault-type';
 import { vaultItemFormSchema } from '@/schemas/vault-schema';
 import { useEffect, useState } from 'react';
 import { useAppForm } from '@/lib/form';
 import { encryptData } from '@/lib/crypto/encryption';
 import { useVaultKey } from '@/hooks/use-vault-key';
 import { createEncryptedVaultItem, updateEncryptedVaultItem } from '@/actions/vault.action';
-import isEqual from 'lodash.isequal';
 import { toast } from 'sonner';
-import { VaultItemType } from '@/lib/generated/prisma/enums';
 import { Eye, EyeOff, FileText, History, Trash2, UserRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { formatDate } from '@/lib/utils';
+import { formatDate, isDeepEqual } from '@/lib/utils';
 
 function defaultAccountValues(): VaultItemFormInput {
   return {
@@ -33,14 +37,12 @@ function defaultAccountValues(): VaultItemFormInput {
     url: '',
     pinned: false,
     type: 'ACCOUNT',
-    data: {
-      email: '',
-      username: '',
-      phone: '',
-      password: '',
-      pin: '',
-      notes: '',
-    },
+    email: '',
+    username: '',
+    phone: '',
+    password: '',
+    pin: '',
+    notes: '',
   };
 }
 
@@ -50,23 +52,33 @@ function defaultNoteValues(): VaultItemFormInput {
     url: '',
     pinned: false,
     type: 'NOTE',
-    data: {
-      content: '',
-    },
+    content: '',
   };
 }
 
+// Convert ke data input form
 function toFormValues(item: DecryptedVaultItem): VaultItemFormInput {
   const base = { title: item.title, url: item.url ?? undefined, pinned: item.pinned };
 
   if (item.type === 'ACCOUNT') {
-    const { email, username, phone, password, pin, notes } = item.data;
-    return { ...base, type: 'ACCOUNT', data: { email, username, phone, password, pin, notes } };
+    const { email, username, phone, password, pin, notes, credentialHistory } = item;
+    return {
+      ...base,
+      type: 'ACCOUNT',
+      email: email ?? '',
+      username: username ?? '',
+      phone: phone ?? '',
+      password: password ?? '',
+      pin: pin ?? '',
+      notes: notes ?? '',
+      credentialHistory: credentialHistory ?? [],
+    };
   }
 
-  return { ...base, type: 'NOTE', data: { content: item.data.content } };
+  return { ...base, type: 'NOTE', content: item.content };
 }
 
+// Menentukan data tersebut ACCOUNT || NOTE
 function getInitialValues(
   existingItem?: DecryptedVaultItem | null,
   type: VaultItemType = 'ACCOUNT',
@@ -96,17 +108,18 @@ export default function VaultForm({
 
   const isEditMode = Boolean(existingItem);
 
-  const [historyList, setHistoryList] = useState<CredentialHistoryEntry[]>(() =>
-    isEditMode && existingItem?.type === 'ACCOUNT'
-      ? (existingItem.data.credentialHistory ?? [])
-      : [],
+  const [credentialHistoryList, setCredentialHistoryList] = useState<CredentialHistoryEntry[]>(
+    () =>
+      isEditMode && existingItem?.type === 'ACCOUNT' ? (existingItem.credentialHistory ?? []) : [],
   );
-  const [saveToHistory, setSaveToHistory] = useState(true);
-  const [revealedHistory, setRevealedHistory] = useState<Record<number, boolean>>({});
+  const [saveToCredentialHistory, setSaveToCredentalHistory] = useState(true);
+  const [revealedCredentialHistory, setRevealedCredentialHistory] = useState<
+    Record<number, boolean>
+  >({});
 
   const originalHistory =
-    existingItem?.type === 'ACCOUNT' ? (existingItem.data.credentialHistory ?? []) : [];
-  const isHistoryChanged = !isEqual(historyList, originalHistory);
+    existingItem?.type === 'ACCOUNT' ? (existingItem.credentialHistory ?? []) : [];
+  const isHistoryChanged = !isDeepEqual(credentialHistoryList, originalHistory);
 
   const form = useAppForm({
     defaultValues: getInitialValues(existingItem, type),
@@ -124,7 +137,7 @@ export default function VaultForm({
 
       if (isEditMode && existingItem) {
         const originalValues = vaultItemFormSchema.parse(toFormValues(existingItem));
-        if (isEqual(parsed, originalValues) && !isHistoryChanged) {
+        if (isDeepEqual(parsed, originalValues) && !isHistoryChanged) {
           toast.info('No changes to save');
           onOpenChange(false);
           return;
@@ -132,47 +145,66 @@ export default function VaultForm({
       }
 
       try {
-        const { data, ...others } = value;
+        let payloadToEncrypt: EncryptedVaultPayload;
 
-        // Preserve and track credential history when editing account
-        let dataToEncrypt = data;
-        if (isEditMode && existingItem?.type === 'ACCOUNT' && value.type === 'ACCOUNT') {
-          let history = [...historyList];
-          const oldPwd = existingItem.data.password;
-          const newPwd = value.data.password;
-          const oldPin = existingItem.data.pin;
-          const newPin = value.data.pin;
+        if (value.type === 'ACCOUNT') {
+          let history = [...credentialHistoryList];
+          if (isEditMode && existingItem?.type === 'ACCOUNT') {
+            const oldPwd = existingItem.password;
+            const newPwd = value.password;
+            const oldPin = existingItem.pin;
+            const newPin = value.pin;
 
-          if (saveToHistory) {
-            if (oldPwd && newPwd && oldPwd !== newPwd) {
-              history.unshift({
-                type: 'PASSWORD',
-                value: oldPwd,
-                changedAt: new Date().toISOString(),
-              });
+            if (saveToCredentialHistory) {
+              if (oldPwd && newPwd && oldPwd !== newPwd) {
+                history.unshift({
+                  type: 'PASSWORD',
+                  value: oldPwd,
+                  changedAt: new Date().toISOString(),
+                });
+              }
+              if (oldPin && newPin && oldPin !== newPin) {
+                history.unshift({
+                  type: 'PIN',
+                  value: oldPin,
+                  changedAt: new Date().toISOString(),
+                });
+              }
             }
-            if (oldPin && newPin && oldPin !== newPin) {
-              history.unshift({
-                type: 'PIN',
-                value: oldPin,
-                changedAt: new Date().toISOString(),
-              });
+
+            if (history.length > 10) {
+              history = history.slice(0, 10);
             }
           }
 
-          if (history.length > 10) {
-            history = history.slice(0, 10);
-          }
-
-          dataToEncrypt = {
-            ...data,
+          payloadToEncrypt = {
+            title: value.title,
+            url: value.url,
+            type: 'ACCOUNT',
+            email: value.email,
+            username: value.username,
+            phone: value.phone,
+            password: value.password,
+            pin: value.pin,
+            notes: value.notes,
             credentialHistory: history.length > 0 ? history : undefined,
+          };
+        } else {
+          payloadToEncrypt = {
+            title: value.title,
+            url: value.url,
+            type: 'NOTE',
+            content: value.content,
           };
         }
 
-        const { ciphertext, iv } = await encryptData(dataToEncrypt, vaultKey);
+        const { ciphertext, iv } = await encryptData(payloadToEncrypt, vaultKey);
 
-        const payload = { ...others, ciphertext, iv };
+        const payload = {
+          pinned: value.pinned ?? false,
+          ciphertext,
+          iv,
+        };
         const res =
           isEditMode && existingItem
             ? await updateEncryptedVaultItem(existingItem.id, payload)
@@ -195,11 +227,11 @@ export default function VaultForm({
   const [prevExistingItem, setPrevExistingItem] = useState(existingItem);
   if (existingItem !== prevExistingItem) {
     setPrevExistingItem(existingItem);
-    setHistoryList(
-      existingItem?.type === 'ACCOUNT' ? (existingItem.data.credentialHistory ?? []) : [],
+    setCredentialHistoryList(
+      existingItem?.type === 'ACCOUNT' ? (existingItem.credentialHistory ?? []) : [],
     );
-    setSaveToHistory(true);
-    setRevealedHistory({});
+    setSaveToCredentalHistory(true);
+    setRevealedCredentialHistory({});
   }
 
   useEffect(() => {
@@ -261,7 +293,7 @@ export default function VaultForm({
                         is optional.
                       </p>
 
-                      <form.AppField name="data.email">
+                      <form.AppField name="email">
                         {(field) => (
                           <field.TextField
                             label="Email"
@@ -275,7 +307,7 @@ export default function VaultForm({
                         )}
                       </form.AppField>
 
-                      <form.AppField name="data.username">
+                      <form.AppField name="username">
                         {(field) => (
                           <field.TextField
                             label="Username / ID"
@@ -288,7 +320,7 @@ export default function VaultForm({
                         )}
                       </form.AppField>
 
-                      <form.AppField name="data.phone">
+                      <form.AppField name="phone">
                         {(field) => (
                           <field.TextField
                             label="Phone"
@@ -299,7 +331,7 @@ export default function VaultForm({
                         )}
                       </form.AppField>
 
-                      <form.AppField name="data.password">
+                      <form.AppField name="password">
                         {(field) => (
                           <field.PasswordField
                             label="Password"
@@ -312,7 +344,7 @@ export default function VaultForm({
                         )}
                       </form.AppField>
 
-                      <form.AppField name="data.pin">
+                      <form.AppField name="pin">
                         {(field) => (
                           <field.PasswordField
                             label="PIN"
@@ -333,21 +365,16 @@ export default function VaultForm({
                           <form.Subscribe
                             selector={(state) => ({
                               pwd:
-                                state.values.type === 'ACCOUNT'
-                                  ? state.values.data.password
-                                  : undefined,
-                              pin:
-                                state.values.type === 'ACCOUNT' ? state.values.data.pin : undefined,
+                                state.values.type === 'ACCOUNT' ? state.values.password : undefined,
+                              pin: state.values.type === 'ACCOUNT' ? state.values.pin : undefined,
                             })}
                           >
                             {({ pwd, pin }) => {
                               const isPwdChanged = Boolean(
-                                existingItem.data.password &&
-                                pwd &&
-                                existingItem.data.password !== pwd,
+                                existingItem.password && pwd && existingItem.password !== pwd,
                               );
                               const isPinChanged = Boolean(
-                                existingItem.data.pin && pin && existingItem.data.pin !== pin,
+                                existingItem.pin && pin && existingItem.pin !== pin,
                               );
                               const hasCredentialChange = isPwdChanged || isPinChanged;
 
@@ -356,14 +383,14 @@ export default function VaultForm({
                               return (
                                 <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
                                   <Checkbox
-                                    id="saveToHistory"
-                                    checked={saveToHistory}
+                                    id="saveToCredentialHistory"
+                                    checked={saveToCredentialHistory}
                                     onCheckedChange={(checked) =>
-                                      setSaveToHistory(Boolean(checked))
+                                      setSaveToCredentalHistory(Boolean(checked))
                                     }
                                   />
                                   <label
-                                    htmlFor="saveToHistory"
+                                    htmlFor="saveToCredentialHistory"
                                     className="cursor-pointer text-xs font-normal text-muted-foreground select-none"
                                   >
                                     Save replaced credentials to history
@@ -373,20 +400,20 @@ export default function VaultForm({
                             }}
                           </form.Subscribe>
 
-                          {historyList.length > 0 && (
+                          {credentialHistoryList.length > 0 && (
                             <div className="space-y-2 rounded-xl border border-border/70 bg-muted/20 p-3 shadow-2xs">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                                   <History className="size-3.5" />
-                                  <span>Credential History ({historyList.length})</span>
+                                  <span>Credential History ({credentialHistoryList.length})</span>
                                 </div>
-                                {historyList.length > 1 && (
+                                {credentialHistoryList.length > 1 && (
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="xs"
                                     className="h-6 px-1.5 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                    onClick={() => setHistoryList([])}
+                                    onClick={() => setCredentialHistoryList([])}
                                   >
                                     Clear all
                                   </Button>
@@ -394,8 +421,8 @@ export default function VaultForm({
                               </div>
 
                               <div className="max-h-36 space-y-1.5 overflow-y-auto pr-0.5">
-                                {historyList.map((entry, idx) => {
-                                  const isRevealed = Boolean(revealedHistory[idx]);
+                                {credentialHistoryList.map((entry, idx) => {
+                                  const isRevealed = Boolean(revealedCredentialHistory[idx]);
                                   return (
                                     <div
                                       key={idx}
@@ -418,7 +445,7 @@ export default function VaultForm({
                                           size="icon-xs"
                                           variant="ghost"
                                           onClick={() =>
-                                            setRevealedHistory((prev) => ({
+                                            setRevealedCredentialHistory((prev) => ({
                                               ...prev,
                                               [idx]: !prev[idx],
                                             }))
@@ -437,7 +464,7 @@ export default function VaultForm({
                                           size="icon-xs"
                                           variant="ghost"
                                           onClick={() =>
-                                            setHistoryList((prev) =>
+                                            setCredentialHistoryList((prev) =>
                                               prev.filter((_, i) => i !== idx),
                                             )
                                           }
@@ -456,7 +483,7 @@ export default function VaultForm({
                         </div>
                       )}
 
-                      <form.AppField name="data.notes">
+                      <form.AppField name="notes">
                         {(field) => (
                           <field.TextareaField
                             label="Notes (optional)"
@@ -466,7 +493,7 @@ export default function VaultForm({
                       </form.AppField>
                     </div>
                   ) : (
-                    <form.AppField name="data.content">
+                    <form.AppField name="content">
                       {(field) => (
                         <field.TextareaField
                           label="Secure Note"
@@ -491,7 +518,7 @@ export default function VaultForm({
               >
                 {([isSubmitting, canSubmit, values]) => {
                   const isFormValuesUnchanged = Boolean(
-                    existingItem && isEqual(values, toFormValues(existingItem)),
+                    existingItem && isDeepEqual(values, toFormValues(existingItem)),
                   );
                   const noChange = isFormValuesUnchanged && !isHistoryChanged;
 
