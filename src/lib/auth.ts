@@ -1,5 +1,5 @@
 import 'server-only';
-import { betterAuth } from 'better-auth';
+import { APIError, betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import prisma from '@/lib/prisma';
 import { username } from 'better-auth/plugins';
@@ -8,6 +8,7 @@ import { sendEmail } from './email';
 import { nextCookies } from 'better-auth/next-js';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { cookies } from 'next/headers';
+import { checkEmailVerificationCooldown, createBetterAuthRateLimitStorage } from '@/lib/rate-limit';
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -19,12 +20,25 @@ export const auth = betterAuth({
   },
 
   session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 hari masa aktif sesi
-    updateAge: 60 * 60 * 24, // Rotasi sesi setiap 24 jam
+    expiresIn: 60 * 60 * 24, // 24 jam (1 hari) masa aktif sesi akun
+    updateAge: 60 * 60 * 12, // rotasi token setiap 12 jam aktivitas
   },
 
   rateLimit: {
     enabled: true,
+    window: 60,
+    max: 100,
+    customRules: {
+      '/send-verification-email': {
+        window: 60,
+        max: 1,
+      },
+      '/is-username-available': {
+        window: 60,
+        max: 20,
+      },
+    },
+    customStorage: createBetterAuthRateLimitStorage(),
   },
 
   emailAndPassword: {
@@ -115,6 +129,15 @@ export const auth = betterAuth({
       const { user, url } = data;
       const token = (data as { token?: string }).token;
 
+      const cooldown = await checkEmailVerificationCooldown(user.email);
+      if (!cooldown.success) {
+        throw new APIError('TOO_MANY_REQUESTS', {
+          message:
+            cooldown.error ||
+            'Too many requests. Please wait a moment before requesting another verification email.',
+        });
+      }
+
       let isChangeEmail = false;
 
       // 1. Cek dari request context Better Auth jika tersedia
@@ -184,11 +207,11 @@ export const auth = betterAuth({
                 id: `email-change-old:${userId}`,
                 identifier: `email-change-old:${userId}`,
                 value: oldEmail,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Berlaku 24 jam
+                expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), // Berlaku 48 jam (2 hari)
               },
               update: {
                 value: oldEmail,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
               },
             });
           } catch (err) {
@@ -212,6 +235,35 @@ export const auth = betterAuth({
         },
       },
       update: {
+        before: async (user) => {
+          const userWithId = user as { id?: string; email?: string };
+          if (userWithId.id && userWithId.email) {
+            try {
+              const existing = await prisma.user.findUnique({
+                where: { id: userWithId.id },
+                select: { email: true },
+              });
+              if (existing?.email && existing.email !== userWithId.email) {
+                await prisma.verification.upsert({
+                  where: { id: `email-change-old:${userWithId.id}` },
+                  create: {
+                    id: `email-change-old:${userWithId.id}`,
+                    identifier: `email-change-old:${userWithId.id}`,
+                    value: existing.email,
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                  },
+                  update: {
+                    value: existing.email,
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                  },
+                });
+              }
+            } catch (err) {
+              console.error('Failed to capture previous email before update:', err);
+            }
+          }
+          return { data: user };
+        },
         async after(user) {
           const record = await prisma.verification
             .findUnique({

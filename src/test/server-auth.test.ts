@@ -4,6 +4,7 @@ import {
   verifyMasterPasswordProof,
   verifyUserAccountPassword,
 } from '@/lib/server-auth';
+import { resetAllRateLimits } from '@/lib/rate-limit';
 
 import prisma from '@/lib/prisma';
 import { getServerSession } from '@/lib/get-session';
@@ -47,6 +48,7 @@ describe('Server Auth Helper Functions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAllRateLimits();
   });
 
   describe('requireAuthUser', () => {
@@ -162,6 +164,31 @@ describe('Server Auth Helper Functions', () => {
 
       const res = await verifyUserAccountPassword('usr_abc', 'correctPassword');
       expect(res.success).toBe(true);
+    });
+
+    it('memblokir dan mengembalikan error rate limit jika percobaan melebihi 5 kali', async () => {
+      vi.mocked(prisma.account.findFirst).mockResolvedValue({
+        password: 'hashed_password',
+      } as unknown as never);
+
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValue(false);
+
+      // Jalankan 5 kali percobaan gagal
+      for (let i = 0; i < 5; i++) {
+        const res = await verifyUserAccountPassword('usr_abc', `wrong_${i}`);
+        expect(res.success).toBe(false);
+        if (!res.success) {
+          expect(res.error).toBe('Incorrect account password');
+        }
+      }
+
+      // Percobaan ke-6 harus langsung diblokir oleh rate limiter tanpa cek database
+      const blockedRes = await verifyUserAccountPassword('usr_abc', 'wrong_6');
+      expect(blockedRes.success).toBe(false);
+      if (!blockedRes.success) {
+        expect(blockedRes.error).toBe('Too many attempts. Please try again in 10 minutes.');
+      }
     });
   });
 

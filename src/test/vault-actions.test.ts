@@ -7,11 +7,17 @@ import {
   toggleVaultItemPin,
 } from '@/actions/vault.action';
 import { saveEncryptedVaultKey } from '@/actions/setup-vault.action';
-import { updateMasterPassword, confirmResetMasterPassword } from '@/actions/settings.action';
+import {
+  updateMasterPassword,
+  confirmResetMasterPassword,
+  requestResetMasterPassword,
+} from '@/actions/settings.action';
 import prisma from '@/lib/prisma';
 import { getServerSession } from '@/lib/get-session';
 import { Session, User as AuthUser } from '@/lib/auth';
 import { VaultItem } from '@/lib/generated/prisma/client';
+import { sendEmail } from '@/lib/email';
+import { resetAllRateLimits } from '@/lib/rate-limit';
 
 vi.mock('@/lib/get-session', () => ({
   getServerSession: vi.fn(),
@@ -19,6 +25,10 @@ vi.mock('@/lib/get-session', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+}));
+
+vi.mock('@/lib/email', () => ({
+  sendEmail: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('better-auth/crypto', () => ({
@@ -92,6 +102,7 @@ describe('Vault Server Actions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAllRateLimits();
   });
 
   describe('createEncryptedVaultItem', () => {
@@ -194,6 +205,30 @@ describe('Vault Server Actions', () => {
       expect(res.success).toBe(false);
       if (!res.success) {
         expect(res.error).toContain('not found');
+      }
+    });
+
+    it('harus menolak updateEncryptedVaultItem jika itemId kosong atau melebihi 128 karakter', async () => {
+      vi.mocked(getServerSession).mockResolvedValue(mockSession);
+
+      const emptyRes = await updateEncryptedVaultItem('   ', {
+        ciphertext: 'cipher',
+        iv: 'iv',
+        pinned: false,
+      });
+      expect(emptyRes.success).toBe(false);
+      if (!emptyRes.success) {
+        expect(emptyRes.error).toBe('Invalid vault item ID');
+      }
+
+      const longRes = await updateEncryptedVaultItem('a'.repeat(129), {
+        ciphertext: 'cipher',
+        iv: 'iv',
+        pinned: false,
+      });
+      expect(longRes.success).toBe(false);
+      if (!longRes.success) {
+        expect(longRes.error).toBe('Invalid vault item ID');
       }
     });
   });
@@ -516,6 +551,120 @@ describe('Vault Server Actions', () => {
       expect(res.success).toBe(false);
       if (!res.success) {
         expect(res.error).toBe('Email verification required');
+      }
+    });
+
+    it('harus menolak confirmResetMasterPassword jika format token tidak valid atau karakter terlarang', async () => {
+      vi.mocked(getServerSession).mockResolvedValue(mockSession);
+
+      const invalidRes = await confirmResetMasterPassword('invalid token with spaces!');
+      expect(invalidRes.success).toBe(false);
+      if (!invalidRes.success) {
+        expect(invalidRes.error).toBe('Invalid or missing reset token');
+      }
+
+      const emptyRes = await confirmResetMasterPassword('');
+      expect(emptyRes.success).toBe(false);
+      if (!emptyRes.success) {
+        expect(emptyRes.error).toBe('Invalid or missing reset token');
+      }
+    });
+  });
+
+  describe('requestResetMasterPassword', () => {
+    it('harus berhasil mengirim email reset master password dengan kata sandi akun yang benar', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        accountId: 'acc_id_123',
+        providerId: 'credential',
+        userId: mockUser.id,
+        password: 'hashed_ValidPassword123!',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValueOnce(true);
+
+      const res = await requestResetMasterPassword('ValidPassword123!');
+      expect(res.success).toBe(true);
+      expect(prisma.verification.deleteMany).toHaveBeenCalledWith({
+        where: { identifier: `reset-vault:${mockUser.id}` },
+      });
+      expect(prisma.verification.create).toHaveBeenCalled();
+      expect(sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: mockUser.email,
+          subject: 'Confirm Reset of Your Centinela Master Password',
+        }),
+      );
+    });
+
+    it('harus menolak requestResetMasterPassword jika kata sandi akun salah', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
+        id: 'acc_123',
+        accountId: 'acc_id_123',
+        providerId: 'credential',
+        userId: mockUser.id,
+        password: 'hashed_ValidPassword123!',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValueOnce(false);
+
+      const res = await requestResetMasterPassword('WrongPassword123!');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('Incorrect account password');
+      }
+    });
+
+    it('harus membatasi rate limit / cooldown pada requestResetMasterPassword untuk cegah spam email', async () => {
+      vi.mocked(getServerSession).mockResolvedValue(mockSession);
+      vi.mocked(prisma.account.findFirst).mockResolvedValue({
+        id: 'acc_123',
+        accountId: 'acc_id_123',
+        providerId: 'credential',
+        userId: mockUser.id,
+        password: 'hashed_ValidPassword123!',
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        scope: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const { verifyPassword } = await import('better-auth/crypto');
+      vi.mocked(verifyPassword).mockResolvedValue(true);
+
+      // Panggilan pertama sukses
+      const firstRes = await requestResetMasterPassword('ValidPassword123!');
+      expect(firstRes.success).toBe(true);
+
+      // Panggilan kedua segera setelahnya harus ditolak oleh cooldown
+      const secondRes = await requestResetMasterPassword('ValidPassword123!');
+      expect(secondRes.success).toBe(false);
+      if (!secondRes.success) {
+        expect(secondRes.error).toContain('Too many requests');
       }
     });
   });

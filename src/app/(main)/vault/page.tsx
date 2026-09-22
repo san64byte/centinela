@@ -20,7 +20,10 @@ export default async function VaultPage() {
     redirect(`/verify-email?email=${encodeURIComponent(user.email)}`);
   }
 
-  const vaultItems = await prisma.vaultItem.findMany({ where: { userId: session.user.id } });
+  const vaultItems = await prisma.vaultItem.findMany({
+    where: { userId: session.user.id },
+    orderBy: [{ pinned: 'desc' }, { updatedAt: 'desc' }],
+  });
 
   return <VaultClient initialVaults={vaultItems} session={user} />;
 }

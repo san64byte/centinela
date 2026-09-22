@@ -12,6 +12,7 @@ import { ActionResponse } from '@/types/action-type';
 import { revalidatePath } from 'next/cache';
 import * as z from 'zod';
 import { generateSalt } from '@/lib/crypto/encoding';
+import { checkEmailVerificationCooldown } from '@/lib/rate-limit';
 
 const updateMasterPasswordSchema = z.object({
   encryptedVaultKey: z.string().trim().min(1, 'Encrypted vault key is required').max(1024),
@@ -135,6 +136,16 @@ export const requestResetMasterPassword = async (
   const userId = auth.user.id;
   const userEmail = auth.user.email;
 
+  const cooldown = await checkEmailVerificationCooldown(`reset-vault:${userId}`);
+  if (!cooldown.success) {
+    return {
+      success: false,
+      error:
+        cooldown.error ||
+        'Too many requests. Please wait a moment before requesting another reset email.',
+    };
+  }
+
   try {
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 menit
@@ -165,7 +176,8 @@ WARNING: Resetting your master password will PERMANENTLY ERASE all items stored 
 To confirm this action, please click the link below (valid for 15 minutes):
 ${confirmUrl}
 
-If you did not request this, please secure your account and change your login password immediately.`,
+If you did not request this, plea
+se secure your account and change your login password immediately.`,
     });
 
     return { success: true };
@@ -178,20 +190,32 @@ If you did not request this, please secure your account and change your login pa
   }
 };
 
+const confirmResetTokenSchema = z.object({
+  token: z
+    .string()
+    .trim()
+    .min(1, 'Invalid or missing reset token')
+    .max(128, 'Invalid or missing reset token')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid or missing reset token'),
+});
+
 export const confirmResetMasterPassword = async (token: string): Promise<ActionResponse> => {
   const auth = await requireAuthUser();
   if (!auth.success) return { success: false, error: auth.error };
 
-  if (!token || typeof token !== 'string') {
+  const parsed = confirmResetTokenSchema.safeParse({ token });
+  if (!parsed.success) {
     return { success: false, error: 'Invalid or missing reset token' };
   }
 
+  const validToken = parsed.data.token;
+
   try {
     const record = await prisma.verification.findUnique({
-      where: { id: `reset-vault:${token}` },
+      where: { id: `reset-vault:${validToken}` },
     });
 
-    if (!record || record.value !== token || record.expiresAt < new Date()) {
+    if (!record || record.value !== validToken || record.expiresAt < new Date()) {
       return {
         success: false,
         error: 'The reset confirmation link is invalid or has expired. Please request a new one.',
@@ -216,7 +240,7 @@ export const confirmResetMasterPassword = async (token: string): Promise<ActionR
         },
       }),
       prisma.verification.delete({
-        where: { id: `reset-vault:${token}` },
+        where: { id: `reset-vault:${validToken}` },
       }),
       prisma.session.deleteMany({
         where: {

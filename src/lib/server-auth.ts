@@ -4,6 +4,7 @@ import { verifyPassword } from 'better-auth/crypto';
 import { SessionRecord, User } from '@/lib/auth';
 import { ActionResponse } from '@/types/action-type';
 import nodeCrypto from 'node:crypto';
+import { checkPasswordRateLimit } from '@/lib/rate-limit';
 
 export type RequireAuthOptions = {
   /**
@@ -60,6 +61,14 @@ export async function verifyUserAccountPassword(
 ): Promise<ActionResponse> {
   if (!accountPassword || typeof accountPassword !== 'string') {
     return { success: false, error: customEmptyMessage || 'Account password is required' };
+  }
+
+  const rateLimitCheck = await checkPasswordRateLimit(userId);
+  if (!rateLimitCheck.success) {
+    return {
+      success: false,
+      error: rateLimitCheck.error || 'Too many attempts. Please try again in 10 minutes.',
+    };
   }
 
   const account = await prisma.account.findFirst({

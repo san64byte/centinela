@@ -36,6 +36,14 @@ async function pingDatabase() {
     console.log(
       `📦 Postgres version: ${result.rows[0].version.split(' ')[0]} ${result.rows[0].version.split(' ')[1]}`,
     );
+
+    const cleanupVerifications = await client.query(
+      'DELETE FROM "verification" WHERE "expiresAt" < NOW();',
+    );
+    const cleanupSessions = await client.query('DELETE FROM "session" WHERE "expiresAt" < NOW();');
+    console.log(
+      `🧹 Cleaned up ${cleanupVerifications.rowCount || 0} expired verification(s) and ${cleanupSessions.rowCount || 0} expired session(s).`,
+    );
   } catch (error) {
     console.error('❌ Failed to ping Supabase database:', error.message || error);
     process.exit(1);

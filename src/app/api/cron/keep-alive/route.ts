@@ -30,17 +30,32 @@ export async function GET(request: NextRequest) {
 
   try {
     const startTime = Date.now();
-    const result = await prisma.$queryRaw<[{ now: Date }]>`SELECT NOW() as now`;
+    const now = new Date();
+
+    const [pingResult, deletedVerifications, deletedSessions] = await Promise.all([
+      prisma.$queryRaw<[{ now: Date }]>`SELECT NOW() as now`,
+      prisma.verification.deleteMany({
+        where: { expiresAt: { lt: now } },
+      }),
+      prisma.session.deleteMany({
+        where: { expiresAt: { lt: now } },
+      }),
+    ]);
+
     const duration = Date.now() - startTime;
 
     return NextResponse.json({
       success: true,
-      message: 'Supabase keep-alive ping successful',
+      message: 'Supabase keep-alive and maintenance cleanup successful',
       duration: `${duration}ms`,
-      timestamp: result[0]?.now ?? new Date().toISOString(),
+      timestamp: pingResult[0]?.now ?? now.toISOString(),
+      cleaned: {
+        expiredVerifications: deletedVerifications.count,
+        expiredSessions: deletedSessions.count,
+      },
     });
   } catch (error: unknown) {
-    console.error('Keep-alive database query failed:', error);
+    console.error('Keep-alive and maintenance cleanup query failed:', error);
     return NextResponse.json(
       {
         success: false,

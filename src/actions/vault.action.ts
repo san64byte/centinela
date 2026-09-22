@@ -24,6 +24,10 @@ const deleteVaultItemSchema = z.object({
   id: z.string().trim().min(1, 'Item ID is required').max(128, 'Item ID exceeds maximum size'),
 });
 
+const updateVaultItemParamsSchema = z.object({
+  itemId: z.string().trim().min(1, 'Item ID is required').max(128, 'Item ID exceeds maximum size'),
+});
+
 export type EncryptedVaultItemInput = z.input<typeof encryptedVaultItemSchema>;
 
 export const createEncryptedVaultItem = async (
@@ -62,13 +66,14 @@ export const updateEncryptedVaultItem = async (
   vaultItem: EncryptedVaultItemInput,
 ): Promise<ActionResponse> => {
   try {
-    if (!itemId) {
-      return { success: false, error: 'Unauthorized' };
-    }
-
     const auth = await requireAuthUser();
     if (!auth.success) {
       return { success: false, error: auth.error };
+    }
+
+    const idParsed = updateVaultItemParamsSchema.safeParse({ itemId });
+    if (!idParsed.success) {
+      return { success: false, error: 'Invalid vault item ID' };
     }
 
     const parsed = encryptedVaultItemSchema.safeParse(vaultItem);
@@ -77,7 +82,7 @@ export const updateEncryptedVaultItem = async (
     }
 
     const result = await prisma.vaultItem.updateMany({
-      where: { id: itemId, userId: auth.user.id },
+      where: { id: idParsed.data.itemId, userId: auth.user.id },
       data: {
         pinned: parsed.data.pinned,
         ciphertext: parsed.data.ciphertext,

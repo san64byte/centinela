@@ -12,17 +12,12 @@ import { useRouter } from 'next/navigation';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import * as z from 'zod';
-import { CircleCheck } from 'lucide-react';
 
 function isEmail(value: string): boolean {
   return z.email().safeParse(value).success;
 }
 
-interface LoginFormProps extends React.ComponentProps<'form'> {
-  isVerified?: boolean;
-}
-
-export default function LoginForm({ className, isVerified, ...props }: LoginFormProps) {
+export default function LoginForm({ className, ...props }: React.ComponentProps<'form'>) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -38,6 +33,7 @@ export default function LoginForm({ className, isVerified, ...props }: LoginForm
     onSubmit: async ({ value }) => {
       setError(null);
       const { identifier, password } = value;
+      const trimmedIdentifier = identifier.trim();
 
       const callbacks = {
         onSuccess: () => {
@@ -49,14 +45,14 @@ export default function LoginForm({ className, isVerified, ...props }: LoginForm
         },
       };
 
-      if (isEmail(identifier)) {
+      if (isEmail(trimmedIdentifier)) {
         await authClient.signIn.email(
-          { email: identifier, password, rememberMe: false },
+          { email: trimmedIdentifier, password, rememberMe: false },
           callbacks,
         );
       } else {
         await authClient.signIn.username(
-          { username: identifier, password, rememberMe: false },
+          { username: trimmedIdentifier, password, rememberMe: false },
           callbacks,
         );
       }
@@ -73,12 +69,6 @@ export default function LoginForm({ className, isVerified, ...props }: LoginForm
       {...props}
     >
       <FieldGroup>
-        {isVerified && (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-600 dark:text-emerald-400">
-            <CircleCheck className="size-4 shrink-0" />
-            <span>Email verified successfully! You can now log in.</span>
-          </div>
-        )}
         {error && <FieldError>{error}</FieldError>}
 
         <form.AppField name="identifier">

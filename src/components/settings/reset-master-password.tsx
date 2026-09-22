@@ -139,8 +139,9 @@ export default function ResetMasterPassword() {
                 loading={isPending}
                 disabled={!checked || !password.trim()}
                 onClick={handleResetMasterPassword}
+                className="truncate"
               >
-                Send confirmation email
+                Reset
               </LoadingButton>
             </AlertDialogFooter>
           </AlertDialogContent>

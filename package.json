@@ -1,6 +1,6 @@
 {
   "name": "centinela",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -29,6 +29,8 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@tanstack/react-form": "^1.33.0",
+    "@upstash/ratelimit": "^2.1.0",
+    "@upstash/redis": "^1.39.0",
     "better-auth": "^1.6.25",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

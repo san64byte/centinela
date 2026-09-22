@@ -171,8 +171,9 @@ export default function DeleteAccount() {
                 loading={isPending}
                 disabled={!checked || !password.trim() || isPending}
                 onClick={handleDeleteAccount}
+                className="truncate"
               >
-                Send confirmation
+                Delete
               </LoadingButton>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -7,20 +7,13 @@ export const metadata: Metadata = {
   description: 'Your secure vault is waiting. Log in to continue.',
 };
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ verified?: string }>;
-}) {
-  const params = await searchParams;
-  const isVerified = params?.verified === 'true';
-
+export default function LoginPage() {
   return (
     <CenteredFormLayout
       title="Welcome Back"
       description="Your secure vault is waiting. Log in to continue."
     >
-      <LoginForm isVerified={isVerified} />
+      <LoginForm />
     </CenteredFormLayout>
   );
 }

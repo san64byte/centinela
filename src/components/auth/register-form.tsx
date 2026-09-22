@@ -92,7 +92,7 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
               const result = usernameSchema.safeParse(value);
               if (!result.success) return undefined;
 
-              if (lastCheckedUsername.current?.username === value) {
+              if (lastCheckedUsername.current && lastCheckedUsername.current.username === value) {
                 return lastCheckedUsername.current.isAvailable
                   ? undefined
                   : 'Username is already taken';
@@ -100,6 +100,12 @@ export default function RegisterForm({ className, ...props }: React.ComponentPro
 
               try {
                 const res = await authClient.isUsernameAvailable({ username: value });
+                if (res.error) {
+                  if (res.error.status === 429) {
+                    return 'Too many requests. Please wait a moment.';
+                  }
+                  return res.error.message || 'Failed to check username availability';
+                }
                 const isAvailable = res.data?.available !== false;
                 lastCheckedUsername.current = { username: value, isAvailable };
                 if (!isAvailable) {
