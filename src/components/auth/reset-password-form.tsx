@@ -4,7 +4,7 @@ import LoadingButton from '@/components/loading-button';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
-import { withPasswordSchema } from '@/schemas/auth-schema';
+import { resetPasswordSchema } from '@/schemas/auth-schema';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -16,9 +16,11 @@ export default function ResetPasswordForm({ token }: { token: string }) {
   const form = useAppForm({
     defaultValues: {
       password: '',
+      confirmPassword: '',
     },
     validators: {
-      onChange: withPasswordSchema,
+      onChange: resetPasswordSchema,
+      onSubmit: resetPasswordSchema,
     },
     onSubmit: async ({ value }) => {
       setError(null);
@@ -55,6 +57,12 @@ export default function ResetPasswordForm({ token }: { token: string }) {
       <FieldGroup>
         <form.AppField name="password">
           {(field) => <field.PasswordField label="New password" placeholder="Enter new password" />}
+        </form.AppField>
+
+        <form.AppField name="confirmPassword">
+          {(field) => (
+            <field.PasswordField label="Confirm new password" placeholder="Confirm new password" />
+          )}
         </form.AppField>
 
         <form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit] as const}>

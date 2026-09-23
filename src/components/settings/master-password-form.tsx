@@ -19,7 +19,7 @@ import ResetMasterPassword from './reset-master-password';
 
 export default function MasterPasswordForm({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
-  const { setUnlockedKey } = useVaultKey();
+  const { lock } = useVaultKey();
   const router = useRouter();
 
   const form = useAppForm({
@@ -80,20 +80,8 @@ export default function MasterPasswordForm({ user }: { user: User }) {
           return;
         }
 
-        try {
-          const safeKey = await unlockVaultKey(
-            value.newMasterPassword,
-            newVaultSalt,
-            encryptedVaultKey,
-            encryptedVaultKeyIv,
-            false,
-          );
-          setUnlockedKey(safeKey);
-        } catch {
-          // Fallback if re-unwrap fails in background
-        }
-
-        toast.success('Master password changed successfully.');
+        lock();
+        toast.success('Master password changed successfully. Vault is now locked.');
         form.reset();
         router.refresh();
       } catch (err) {

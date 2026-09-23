@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import { SignOutOverlay } from '@/components/signout-overlay';
 import { ThemeProvider } from '@/components/theme-provider';
+import { headers } from 'next/headers';
 import { cn } from '@/lib/utils';
 
 const geistMono = Geist_Mono({
@@ -23,6 +24,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body
@@ -39,6 +42,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
+          nonce={nonce}
         >
           {children}
           <Toaster

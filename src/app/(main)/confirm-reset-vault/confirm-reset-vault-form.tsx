@@ -14,7 +14,7 @@ export default function ConfirmResetVaultForm({ token }: { token?: string }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { lock } = useVaultKey();
+  const { broadcastReset } = useVaultKey();
 
   if (!token) {
     return (
@@ -40,7 +40,7 @@ export default function ConfirmResetVaultForm({ token }: { token?: string }) {
         return;
       }
 
-      lock();
+      broadcastReset();
       toast.success('Master password reset successfully. All vault items have been erased.');
       router.push('/setup-vault');
     });

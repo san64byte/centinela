@@ -39,18 +39,29 @@ export const updateProfileDetailSchema = z.object({
   username: usernameSchema,
 });
 
-export const updatePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Enter your current account password'),
-  newPassword: passwordSchema,
-});
+export const updatePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Enter your current account password'),
+    newPassword: passwordSchema,
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: 'New password cannot be the same as your current password',
+    path: ['newPassword'],
+  });
 
 export const withEmailSchema = z.object({
   email: emailSchema,
 });
 
-export const withPasswordSchema = z.object({
-  password: passwordSchema,
-});
+export const resetPasswordSchema = z
+  .object({
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, 'Confirm password is required'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 export const changeEmailSchema = z.object({
   email: emailSchema,

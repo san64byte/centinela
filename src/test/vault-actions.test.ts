@@ -103,6 +103,11 @@ describe('Vault Server Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAllRateLimits();
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: mockUser.id,
+      encryptedVaultKey: 'wrapped_key_test',
+      vaultVerifier: 'verifier_test',
+    } as unknown as never);
   });
 
   describe('createEncryptedVaultItem', () => {
@@ -166,6 +171,28 @@ describe('Vault Server Actions', () => {
       expect(res.success).toBe(false);
       if (!res.success) {
         expect(res.error).toBe('Invalid vault item payload');
+      }
+    });
+
+    it('harus menolak jika vault belum di-setup atau sudah di-reset', async () => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        id: mockUser.id,
+        encryptedVaultKey: null,
+        vaultVerifier: null,
+      } as unknown as never);
+
+      const res = await createEncryptedVaultItem({
+        ciphertext: 'base64ciphertext',
+        iv: 'base64iv',
+        pinned: false,
+      });
+
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe(
+          'Vault is not configured or has been reset. Please set up your master password.',
+        );
       }
     });
   });
@@ -291,31 +318,9 @@ describe('Vault Server Actions', () => {
   describe('saveEncryptedVaultKey & Master Password Management', () => {
     it('harus berhasil menyimpan encryptedVaultKey untuk user yang aktif', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
-
-      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
-        id: 'acc_123',
-        userId: mockUser.id,
-        providerId: 'credential',
-        password: 'hashed_password',
-        accountId: 'acc_123',
-        accessToken: null,
-        refreshToken: null,
-        idToken: null,
-        accessTokenExpiresAt: null,
-        refreshTokenExpiresAt: null,
-        scope: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
       vi.mocked(prisma.user.updateMany).mockResolvedValueOnce({ count: 1 });
 
-      const res = await saveEncryptedVaultKey(
-        'wrappedKey123',
-        'iv123',
-        'AccountPassword123!',
-        'verifier123',
-      );
+      const res = await saveEncryptedVaultKey('wrappedKey123', 'iv123', 'verifier123');
       expect(res.success).toBe(true);
       expect(prisma.user.updateMany).toHaveBeenCalledWith({
         where: { id: mockUser.id, encryptedVaultKey: null },
@@ -327,37 +332,14 @@ describe('Vault Server Actions', () => {
       });
     });
 
-    it('harus menolak saveEncryptedVaultKey jika kata sandi akun salah', async () => {
+    it('harus menolak saveEncryptedVaultKey jika vault key sudah pernah diinisialisasi', async () => {
       vi.mocked(getServerSession).mockResolvedValueOnce(mockSession);
+      vi.mocked(prisma.user.updateMany).mockResolvedValueOnce({ count: 0 });
 
-      vi.mocked(prisma.account.findFirst).mockResolvedValueOnce({
-        id: 'acc_123',
-        userId: mockUser.id,
-        providerId: 'credential',
-        password: 'hashed_password',
-        accountId: 'acc_123',
-        accessToken: null,
-        refreshToken: null,
-        idToken: null,
-        accessTokenExpiresAt: null,
-        refreshTokenExpiresAt: null,
-        scope: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      const { verifyPassword } = await import('better-auth/crypto');
-      vi.mocked(verifyPassword).mockResolvedValueOnce(false);
-
-      const res = await saveEncryptedVaultKey(
-        'wrappedKey123',
-        'iv123',
-        'WrongAccountPassword!',
-        'verifier123',
-      );
+      const res = await saveEncryptedVaultKey('wrappedKey123', 'iv123', 'verifier123');
       expect(res.success).toBe(false);
       if (!res.success) {
-        expect(res.error).toBe('Incorrect account password');
+        expect(res.error).toBe('Vault key already initialized or user not found');
       }
     });
 

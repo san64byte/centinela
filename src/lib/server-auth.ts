@@ -3,8 +3,12 @@ import prisma from '@/lib/prisma';
 import { verifyPassword } from 'better-auth/crypto';
 import { SessionRecord, User } from '@/lib/auth';
 import { ActionResponse } from '@/types/action-type';
+import {
+  checkPasswordRateLimit,
+  recordFailedPasswordAttempt,
+  resetPasswordRateLimit,
+} from '@/lib/rate-limit';
 import nodeCrypto from 'node:crypto';
-import { checkPasswordRateLimit } from '@/lib/rate-limit';
 
 export type RequireAuthOptions = {
   /**
@@ -51,6 +55,31 @@ export async function requireAuthUser(
 }
 
 /**
+ * Validates that the authenticated user has an active, configured vault.
+ * Queries the database directly to ensure encryptedVaultKey and vaultVerifier exist.
+ */
+export async function requireVaultUser(
+  options: RequireAuthOptions = {},
+): Promise<RequireAuthResult> {
+  const auth = await requireAuthUser(options);
+  if (!auth.success) return auth;
+
+  const user = await prisma.user.findUnique({
+    where: { id: auth.user.id },
+    select: { encryptedVaultKey: true, vaultVerifier: true },
+  });
+
+  if (!user?.encryptedVaultKey || !user?.vaultVerifier) {
+    return {
+      success: false,
+      error: 'Vault is not configured or has been reset. Please set up your master password.',
+    };
+  }
+
+  return auth;
+}
+
+/**
  * Verifies that the given password matches the user's account password.
  * Queries the credential account record and checks the password hash.
  */
@@ -88,8 +117,11 @@ export async function verifyUserAccountPassword(
   });
 
   if (!isPasswordValid) {
+    await recordFailedPasswordAttempt(userId);
     return { success: false, error: 'Incorrect account password' };
   }
+
+  await resetPasswordRateLimit(userId);
 
   return { success: true };
 }

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import * as z from 'zod';
+import { emailSchema } from '@/schemas/auth-schema';
 import VerifyEmailForm from '@/components/auth/verify-email-form';
 
 export const metadata: Metadata = {
@@ -19,7 +19,7 @@ export default async function VerifyEmailPage({
   searchParams: Promise<{ email?: string }>;
 }) {
   const { email } = await searchParams;
-  if (!email || !z.email().safeParse(email).success) {
+  if (!email || !emailSchema.safeParse(email).success) {
     redirect('/login');
   }
 

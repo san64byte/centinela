@@ -14,6 +14,7 @@ import { unlockVaultKey } from '@/lib/crypto/keys';
 import { toast } from 'sonner';
 
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 menit
+const VAULT_SYNC_CHANNEL = 'centinela-vault-sync';
 
 interface VaultKeyContextValue {
   vaultKey: CryptoKey | null;
@@ -24,7 +25,8 @@ interface VaultKeyContextValue {
     encryptedVaultKey: string,
     encryptedVaultKeyIv: string,
   ) => Promise<CryptoKey>;
-  lock: () => void;
+  lock: (broadcast?: boolean) => void;
+  broadcastReset: () => void;
   setUnlockedKey: (key: CryptoKey) => void;
 }
 
@@ -34,16 +36,58 @@ export function VaultKeyProvider({ children }: { children: ReactNode }) {
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
   const lastActivityRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<BroadcastChannel | null>(null);
 
   const unlockingRef = useRef(false);
 
-  const lock = useCallback(() => {
+  const lock = useCallback((broadcast: boolean = true) => {
     setVaultKey(null);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (broadcast && typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+      try {
+        channelRef.current?.postMessage({ type: 'VAULT_LOCK' });
+      } catch {
+        // ignore
+      }
+    }
   }, []);
+
+  const broadcastReset = useCallback(() => {
+    lock(false);
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+      try {
+        channelRef.current?.postMessage({ type: 'VAULT_RESET' });
+      } catch {
+        // ignore
+      }
+    }
+  }, [lock]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+
+    const channel = new BroadcastChannel(VAULT_SYNC_CHANNEL);
+    channelRef.current = channel;
+
+    channel.onmessage = (event) => {
+      if (event.data?.type === 'VAULT_LOCK') {
+        lock(false);
+      } else if (event.data?.type === 'VAULT_RESET') {
+        lock(false);
+        if (window.location.pathname.startsWith('/vault')) {
+          window.location.href = '/setup-vault';
+        }
+      }
+    };
+
+    return () => {
+      channel.close();
+      channelRef.current = null;
+    };
+  }, [lock]);
 
   const unlock = useCallback(
     async (
@@ -125,8 +169,9 @@ export function VaultKeyProvider({ children }: { children: ReactNode }) {
       unlock,
       setUnlockedKey,
       lock,
+      broadcastReset,
     }),
-    [vaultKey, unlock, setUnlockedKey, lock],
+    [vaultKey, unlock, setUnlockedKey, lock, broadcastReset],
   );
 
   return <VaultKeyContext.Provider value={value}>{children}</VaultKeyContext.Provider>;

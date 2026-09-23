@@ -9,6 +9,7 @@ import { nextCookies } from 'better-auth/next-js';
 import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { cookies } from 'next/headers';
 import { checkEmailVerificationCooldown, createBetterAuthRateLimitStorage } from '@/lib/rate-limit';
+import { verifyPassword } from 'better-auth/crypto';
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -33,9 +34,37 @@ export const auth = betterAuth({
         window: 60,
         max: 1,
       },
+      '/forget-password': {
+        window: 300,
+        max: 3,
+      },
+      '/request-password-reset': {
+        window: 300,
+        max: 3,
+      },
+      '/reset-password': {
+        window: 300,
+        max: 5,
+      },
+      '/reset-password/*': {
+        window: 300,
+        max: 5,
+      },
       '/is-username-available': {
         window: 60,
         max: 20,
+      },
+      '/change-password': {
+        window: 300,
+        max: 5,
+      },
+      '/sign-up/*': {
+        window: 300,
+        max: 5,
+      },
+      '/sign-in/*': {
+        window: 300,
+        max: 10,
       },
     },
     customStorage: createBetterAuthRateLimitStorage(),
@@ -194,6 +223,57 @@ export const auth = betterAuth({
 
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path === '/change-password') {
+        const body = ctx.body as { currentPassword?: string; newPassword?: string } | undefined;
+        if (
+          body?.currentPassword &&
+          body?.newPassword &&
+          body.currentPassword === body.newPassword
+        ) {
+          throw new APIError('BAD_REQUEST', {
+            message: 'New password cannot be the same as your current password',
+          });
+        }
+      }
+
+      if (ctx.path === '/reset-password') {
+        const body = ctx.body as { newPassword?: string; token?: string } | undefined;
+        const query = ctx.query as { token?: string } | undefined;
+        const token = body?.token || query?.token;
+        const newPassword = body?.newPassword;
+
+        if (token && newPassword) {
+          const verification = await prisma.verification.findFirst({
+            where: {
+              identifier: `reset-password:${token}`,
+              expiresAt: { gt: new Date() },
+            },
+          });
+
+          if (verification?.value) {
+            const account = await prisma.account.findFirst({
+              where: {
+                userId: verification.value,
+                providerId: 'credential',
+              },
+            });
+
+            if (account?.password) {
+              const isSame = await verifyPassword({
+                hash: account.password,
+                password: newPassword,
+              });
+
+              if (isSame) {
+                throw new APIError('BAD_REQUEST', {
+                  message: 'New password cannot be the same as your old password',
+                });
+              }
+            }
+          }
+        }
+      }
+
       if (ctx.path === '/change-email') {
         const session = await getSessionFromCtx(ctx);
         const userId = session?.user?.id;

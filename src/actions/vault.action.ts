@@ -1,7 +1,7 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { requireAuthUser } from '@/lib/server-auth';
+import { requireVaultUser } from '@/lib/server-auth';
 import { ActionResponse } from '@/types/action-type';
 import { revalidatePath } from 'next/cache';
 import * as z from 'zod';
@@ -34,7 +34,7 @@ export const createEncryptedVaultItem = async (
   vaultItem: EncryptedVaultItemInput,
 ): Promise<ActionResponse<{ id: string }>> => {
   try {
-    const auth = await requireAuthUser();
+    const auth = await requireVaultUser();
     if (!auth.success) {
       return { success: false, error: auth.error };
     }
@@ -66,7 +66,7 @@ export const updateEncryptedVaultItem = async (
   vaultItem: EncryptedVaultItemInput,
 ): Promise<ActionResponse> => {
   try {
-    const auth = await requireAuthUser();
+    const auth = await requireVaultUser();
     if (!auth.success) {
       return { success: false, error: auth.error };
     }
@@ -105,7 +105,7 @@ export const updateEncryptedVaultItem = async (
 
 export const deleteVaultItem = async (id: string): Promise<ActionResponse> => {
   try {
-    const auth = await requireAuthUser();
+    const auth = await requireVaultUser();
     if (!auth.success) {
       return { success: false, error: auth.error };
     }
@@ -133,7 +133,7 @@ export const deleteVaultItem = async (id: string): Promise<ActionResponse> => {
 
 export const toggleVaultItemPin = async (id: string, pinned: boolean): Promise<ActionResponse> => {
   try {
-    const auth = await requireAuthUser();
+    const auth = await requireVaultUser();
     if (!auth.success) {
       return { success: false, error: auth.error };
     }

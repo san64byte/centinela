@@ -5,16 +5,15 @@ import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui
 import { authClient } from '@/lib/auth-client';
 import { useAppForm } from '@/lib/form';
 import { cn } from '@/lib/utils';
-import { loginSchema } from '@/schemas/auth-schema';
+import { emailSchema, loginSchema } from '@/schemas/auth-schema';
 import { ErrorContext } from 'better-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import * as z from 'zod';
 
 function isEmail(value: string): boolean {
-  return z.email().safeParse(value).success;
+  return emailSchema.safeParse(value).success;
 }
 
 export default function LoginForm({ className, ...props }: React.ComponentProps<'form'>) {

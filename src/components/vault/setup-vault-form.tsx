@@ -25,7 +25,6 @@ export default function SetupVaultForm({ user, className, ...props }: SetupVault
 
   const form = useAppForm({
     defaultValues: {
-      accountPassword: '',
       masterPassword: '',
       confirmMasterPassword: '',
     },
@@ -45,7 +44,6 @@ export default function SetupVaultForm({ user, className, ...props }: SetupVault
         const res = await saveEncryptedVaultKey(
           encryptedVaultKey,
           encryptedVaultKeyIv,
-          value.accountPassword,
           vaultVerifier,
         );
 
@@ -82,20 +80,13 @@ export default function SetupVaultForm({ user, className, ...props }: SetupVault
       <FieldGroup>
         {error && <FieldError>{error}</FieldError>}
 
-        <form.AppField name="accountPassword">
-          {(field) => (
-            <field.PasswordField
-              label="Account Password"
-              placeholder="Enter your account login password"
-              description="Confirm your identity and verify your master password is distinct."
-              autoFocus
-            />
-          )}
-        </form.AppField>
-
         <form.AppField name="masterPassword">
           {(field) => (
-            <field.PasswordField label="Master Password" placeholder="Create strong password">
+            <field.PasswordField
+              label="Master Password"
+              placeholder="Create strong password"
+              autoFocus
+            >
               <PasswordStrengthMeter password={field.state.value} />
             </field.PasswordField>
           )}

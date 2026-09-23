@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   checkPasswordRateLimit,
+  recordFailedPasswordAttempt,
+  resetPasswordRateLimit,
   checkEmailVerificationCooldown,
   createBetterAuthRateLimitStorage,
   resetAllRateLimits,
@@ -13,20 +15,21 @@ describe('Rate Limiter Core Module', () => {
   });
 
   describe('checkPasswordRateLimit (TEMUAN 2: Re-Authentication Brute-Force)', () => {
-    it('mengizinkan hingga 5 percobaan verifikasi password dalam window', async () => {
+    it('mengizinkan verifikasi password jika belum mencapai 5 kali kegagalan', async () => {
       const userId = 'usr_rate_limit_1';
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
+        await recordFailedPasswordAttempt(userId);
         const result = await checkPasswordRateLimit(userId);
         expect(result.success).toBe(true);
       }
     });
 
-    it('menolak percobaan ke-6 dengan pesan lockout dan retryAfter', async () => {
+    it('menolak percobaan setelah 5 kali kegagalan dengan pesan lockout dan retryAfter', async () => {
       const userId = 'usr_rate_limit_2';
 
       for (let i = 0; i < 5; i++) {
-        await checkPasswordRateLimit(userId);
+        await recordFailedPasswordAttempt(userId);
       }
 
       const blockedResult = await checkPasswordRateLimit(userId);
@@ -35,13 +38,31 @@ describe('Rate Limiter Core Module', () => {
       expect(blockedResult.retryAfter).toBeGreaterThan(0);
     });
 
+    it('mereset counter kegagalan saat resetPasswordRateLimit dipanggil', async () => {
+      const userId = 'usr_rate_limit_reset';
+
+      for (let i = 0; i < 4; i++) {
+        await recordFailedPasswordAttempt(userId);
+      }
+
+      // Berhasil login / verifikasi -> reset counter
+      await resetPasswordRateLimit(userId);
+
+      // Harusnya bisa melakukan percobaan lagi tanpa terblokir
+      for (let i = 0; i < 4; i++) {
+        await recordFailedPasswordAttempt(userId);
+        const res = await checkPasswordRateLimit(userId);
+        expect(res.success).toBe(true);
+      }
+    });
+
     it('memisahkan counter antar user yang berbeda', async () => {
       const userA = 'usr_alice';
       const userB = 'usr_bob';
 
-      // Alice gunakan kuota sampai habis
+      // Alice gagal 5 kali berturut-turut
       for (let i = 0; i < 5; i++) {
-        await checkPasswordRateLimit(userA);
+        await recordFailedPasswordAttempt(userA);
       }
       const aliceBlocked = await checkPasswordRateLimit(userA);
       expect(aliceBlocked.success).toBe(false);

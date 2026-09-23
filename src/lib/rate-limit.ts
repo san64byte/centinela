@@ -76,6 +76,33 @@ class InMemorySlidingWindowStore {
     return { allowed: true, retryAfter: null };
   }
 
+  peek(
+    key: string,
+    windowSeconds: number,
+    maxRequests: number,
+  ): { allowed: boolean; retryAfter: number | null } {
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+    const windowStart = now - windowMs;
+
+    const timestamps = (this.store.get(key) || []).filter((ts) => ts > windowStart);
+
+    if (timestamps.length >= maxRequests) {
+      const oldestInWindow = timestamps[0];
+      const retryAfter = Math.max(1, Math.ceil((oldestInWindow + windowMs - now) / 1000));
+      return { allowed: false, retryAfter };
+    }
+
+    return { allowed: true, retryAfter: null };
+  }
+
+  record(key: string): void {
+    const now = Date.now();
+    const timestamps = this.store.get(key) || [];
+    timestamps.push(now);
+    this.store.set(key, timestamps);
+  }
+
   reset(key?: string): void {
     if (key) {
       this.store.delete(key);
@@ -111,18 +138,9 @@ function getRedisClient(): Redis | null {
 
 const redisClient = getRedisClient();
 
-let passwordLimiter: Ratelimit | null = null;
 let emailLimiter: Ratelimit | null = null;
 
 if (redisClient) {
-  passwordLimiter = new Ratelimit({
-    redis: redisClient,
-    limiter: Ratelimit.slidingWindow(5, '10 m'), // 5 percobaan per 10 menit
-    prefix: 'centinela:rl:verify-pwd',
-    ephemeralCache: new Map(),
-    timeout: 2000,
-  });
-
   emailLimiter = new Ratelimit({
     redis: redisClient,
     limiter: Ratelimit.slidingWindow(1, '60 s'), // 1 email per 60 detik
@@ -134,17 +152,21 @@ if (redisClient) {
 
 /**
  * Checks rate limiting for account password verification / re-authentication.
- * Limits users to 5 attempts per 10 minutes.
+ * Limits users to 5 failed attempts per 10 minutes.
+ * Does not increment the counter; call `recordFailedPasswordAttempt` on failure,
+ * and `resetPasswordRateLimit` on success.
  * Addresses TEMUAN 2 from SECURITY_AUDIT.md.
  */
 export async function checkPasswordRateLimit(userId: string): Promise<RateLimitResult> {
   const key = `verify-pwd:${userId}`;
 
-  if (passwordLimiter) {
+  if (redisClient) {
     try {
-      const result = await passwordLimiter.limit(key);
-      if (!result.success) {
-        const retryAfterSeconds = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
+      const fullKey = `centinela:rl:verify-pwd:${userId}`;
+      const count = await redisClient.get<number>(fullKey);
+      if (count && count >= 5) {
+        const ttl = await redisClient.ttl(fullKey);
+        const retryAfterSeconds = Math.max(1, ttl > 0 ? ttl : 600);
         return {
           success: false,
           retryAfter: retryAfterSeconds,
@@ -160,8 +182,8 @@ export async function checkPasswordRateLimit(userId: string): Promise<RateLimitR
     }
   }
 
-  // Fallback to in-memory sliding window
-  const memoryResult = inMemoryStore.consume(key, 600, 5);
+  // Fallback to in-memory sliding window peek
+  const memoryResult = inMemoryStore.peek(key, 600, 5);
   if (!memoryResult.allowed) {
     return {
       success: false,
@@ -171,6 +193,52 @@ export async function checkPasswordRateLimit(userId: string): Promise<RateLimitR
   }
 
   return { success: true };
+}
+
+/**
+ * Records a failed password verification attempt for a user.
+ */
+export async function recordFailedPasswordAttempt(userId: string): Promise<void> {
+  const key = `verify-pwd:${userId}`;
+
+  if (redisClient) {
+    try {
+      const fullKey = `centinela:rl:verify-pwd:${userId}`;
+      const count = await redisClient.incr(fullKey);
+      if (count === 1) {
+        await redisClient.expire(fullKey, 600);
+      }
+      return;
+    } catch (err) {
+      console.warn(
+        'Upstash rate limiter error recording failed password, falling back to memory:',
+        err,
+      );
+    }
+  }
+
+  inMemoryStore.record(key);
+}
+
+/**
+ * Resets the password rate limit counter upon successful password verification.
+ */
+export async function resetPasswordRateLimit(userId: string): Promise<void> {
+  const key = `verify-pwd:${userId}`;
+
+  if (redisClient) {
+    try {
+      const fullKey = `centinela:rl:verify-pwd:${userId}`;
+      await redisClient.del(fullKey);
+    } catch (err) {
+      console.warn(
+        'Upstash rate limiter error resetting password limit, falling back to memory:',
+        err,
+      );
+    }
+  }
+
+  inMemoryStore.reset(key);
 }
 
 /**

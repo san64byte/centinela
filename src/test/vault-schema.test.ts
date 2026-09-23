@@ -40,9 +40,8 @@ describe('Vault Schema Validation', () => {
   });
 
   describe('Setup Master Password Schema', () => {
-    it('harus valid jika password dan konfirmasi cocok dan berbeda dari account password', () => {
+    it('harus valid jika password dan konfirmasi cocok', () => {
       const result = setupMasterPasswordSchema.safeParse({
-        accountPassword: 'MyAccountPassword123!',
         masterPassword: 'SecurePassword123!',
         confirmMasterPassword: 'SecurePassword123!',
       });
@@ -51,25 +50,10 @@ describe('Vault Schema Validation', () => {
 
     it('harus menolak jika password dan konfirmasi tidak cocok', () => {
       const result = setupMasterPasswordSchema.safeParse({
-        accountPassword: 'MyAccountPassword123!',
         masterPassword: 'SecurePassword123!',
         confirmMasterPassword: 'DifferentPassword123!',
       });
       expect(result.success).toBe(false);
-    });
-
-    it('harus menolak jika master password sama dengan account password (mencegah password reuse)', () => {
-      const result = setupMasterPasswordSchema.safeParse({
-        accountPassword: 'SecurePassword123!',
-        masterPassword: 'SecurePassword123!',
-        confirmMasterPassword: 'SecurePassword123!',
-      });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toContain(
-          'cannot be the same as your account login password',
-        );
-      }
     });
   });
 

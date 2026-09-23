@@ -70,17 +70,12 @@ export const vaultItemFormSchema = z.discriminatedUnion('type', [
 
 export const setupMasterPasswordSchema = z
   .object({
-    accountPassword: z.string().min(1, 'Account password is required'),
     masterPassword: masterPasswordSchema,
     confirmMasterPassword: z.string().min(1, 'Password confirmation is required'),
   })
   .refine((data) => data.masterPassword === data.confirmMasterPassword, {
     message: 'Passwords do not match',
     path: ['confirmMasterPassword'],
-  })
-  .refine((data) => data.masterPassword !== data.accountPassword, {
-    message: 'Master password cannot be the same as your account login password',
-    path: ['masterPassword'],
   });
 
 export const unlockVaultSchema = z.object({
